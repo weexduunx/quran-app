@@ -1,98 +1,172 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
-
-import { HelloWave } from '@/components/hello-wave';
-import ParallaxScrollView from '@/components/parallax-scroll-view';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Link } from 'expo-router';
+import React, { useEffect, useState } from 'react';
+import {
+  View,
+  Text,
+  FlatList,
+  StyleSheet,
+  ActivityIndicator,
+  TextInput,
+  Alert,
+} from 'react-native';
+import { router } from 'expo-router';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { SurahCard } from '@/components/SurahCard';
+import { useQuranStore, Surah } from '@/stores/quranStore';
+import { quranApi } from '@/services/api';
 
 export default function HomeScreen() {
-  return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12',
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <Link href="/modal">
-          <Link.Trigger>
-            <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-          </Link.Trigger>
-          <Link.Preview />
-          <Link.Menu>
-            <Link.MenuAction title="Action" icon="cube" onPress={() => alert('Action pressed')} />
-            <Link.MenuAction
-              title="Share"
-              icon="square.and.arrow.up"
-              onPress={() => alert('Share pressed')}
-            />
-            <Link.Menu title="More" icon="ellipsis">
-              <Link.MenuAction
-                title="Delete"
-                icon="trash"
-                destructive
-                onPress={() => alert('Delete pressed')}
-              />
-            </Link.Menu>
-          </Link.Menu>
-        </Link>
+  const {
+    surahs,
+    setSurahs,
+    setCurrentSurah,
+    isLoading,
+    setLoading,
+    error,
+    setError,
+  } = useQuranStore();
 
-        <ThemedText>
-          {`Tap the Explore tab to learn more about what's included in this starter app.`}
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          {`When you're ready, run `}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
-    </ParallaxScrollView>
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filteredSurahs, setFilteredSurahs] = useState<Surah[]>([]);
+
+  useEffect(() => {
+    loadSurahs();
+  }, []);
+
+  useEffect(() => {
+    if (searchQuery.trim()) {
+      const filtered = surahs.filter((surah) =>
+        surah.name_arabic.includes(searchQuery) ||
+        surah.name_french.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        surah.name_transliteration.toLowerCase().includes(searchQuery.toLowerCase())
+      );
+      setFilteredSurahs(filtered);
+    } else {
+      setFilteredSurahs(surahs);
+    }
+  }, [searchQuery, surahs]);
+
+  const loadSurahs = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const surahsData = await quranApi.getSurahs();
+      setSurahs(surahsData);
+    } catch (err) {
+      console.error('Error loading surahs:', err);
+      setError('Erreur lors du chargement des sourates');
+      Alert.alert(
+        'Erreur',
+        'Impossible de charger les sourates. Vérifiez votre connexion.',
+        [{ text: 'Réessayer', onPress: loadSurahs }]
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSurahPress = (surah: Surah) => {
+    setCurrentSurah(surah);
+    router.push(`/surah/${surah.id}`);
+  };
+
+  const renderSurah = ({ item }: { item: Surah }) => (
+    <SurahCard surah={item} onPress={handleSurahPress} />
+  );
+
+  const renderHeader = () => (
+    <View style={styles.header}>
+      <Text style={styles.title}>القرآن الكريم</Text>
+      <Text style={styles.subtitle}>Le Saint Coran</Text>
+
+      <View style={styles.searchContainer}>
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Rechercher une sourate..."
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          placeholderTextColor="#999"
+        />
+      </View>
+    </View>
+  );
+
+  if (isLoading && surahs.length === 0) {
+    return (
+      <SafeAreaView style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#1B5E20" />
+        <Text style={styles.loadingText}>Chargement des sourates...</Text>
+      </SafeAreaView>
+    );
+  }
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <FlatList
+        data={filteredSurahs}
+        renderItem={renderSurah}
+        keyExtractor={(item) => item.id.toString()}
+        ListHeaderComponent={renderHeader}
+        contentContainerStyle={styles.listContent}
+        showsVerticalScrollIndicator={false}
+      />
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  titleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+  container: {
+    flex: 1,
+    backgroundColor: '#F5F5F5',
   },
-  stepContainer: {
-    gap: 8,
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F5F5F5',
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: '#666',
+  },
+  header: {
+    backgroundColor: '#1B5E20',
+    paddingHorizontal: 20,
+    paddingVertical: 24,
+    marginBottom: 16,
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#fff',
+    textAlign: 'center',
     marginBottom: 8,
   },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
+  subtitle: {
+    fontSize: 18,
+    color: '#A5D6A7',
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  searchContainer: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 3.84,
+  },
+  searchInput: {
+    fontSize: 16,
+    paddingVertical: 12,
+    color: '#333',
+  },
+  listContent: {
+    paddingBottom: 20,
   },
 });

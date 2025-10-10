@@ -1,0 +1,124 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import NetInfo from '@react-native-community/netinfo';
+
+export interface CacheItem<T> {
+  data: T;
+  timestamp: number;
+  expiry?: number;
+}
+
+export class CacheService {
+  private static readonly CACHE_PREFIX = 'quran_cache_';
+  private static readonly DEFAULT_EXPIRY = 24 * 60 * 60 * 1000; // 24 heures
+
+  static async set<T>(key: string, data: T, expiry?: number): Promise<void> {
+    try {
+      const cacheItem: CacheItem<T> = {
+        data,
+        timestamp: Date.now(),
+        expiry: expiry || this.DEFAULT_EXPIRY,
+      };
+
+      await AsyncStorage.setItem(
+        this.CACHE_PREFIX + key,
+        JSON.stringify(cacheItem)
+      );
+    } catch (error) {
+      console.error('Erreur lors de la mise en cache:', error);
+    }
+  }
+
+  static async get<T>(key: string): Promise<T | null> {
+    try {
+      const cached = await AsyncStorage.getItem(this.CACHE_PREFIX + key);
+      if (!cached) return null;
+
+      const cacheItem: CacheItem<T> = JSON.parse(cached);
+
+      // Vérifier si le cache est expiré
+      if (cacheItem.expiry && Date.now() - cacheItem.timestamp > cacheItem.expiry) {
+        await this.remove(key);
+        return null;
+      }
+
+      return cacheItem.data;
+    } catch (error) {
+      console.error('Erreur lors de la lecture du cache:', error);
+      return null;
+    }
+  }
+
+  static async remove(key: string): Promise<void> {
+    try {
+      await AsyncStorage.removeItem(this.CACHE_PREFIX + key);
+    } catch (error) {
+      console.error('Erreur lors de la suppression du cache:', error);
+    }
+  }
+
+  static async clear(): Promise<void> {
+    try {
+      const keys = await AsyncStorage.getAllKeys();
+      const cacheKeys = keys.filter(key => key.startsWith(this.CACHE_PREFIX));
+      await AsyncStorage.multiRemove(cacheKeys);
+    } catch (error) {
+      console.error('Erreur lors du nettoyage du cache:', error);
+    }
+  }
+
+  static async isOnline(): Promise<boolean> {
+    const netInfo = await NetInfo.fetch();
+    return netInfo.isConnected && netInfo.isInternetReachable;
+  }
+
+  static async getCacheSize(): Promise<number> {
+    try {
+      const keys = await AsyncStorage.getAllKeys();
+      const cacheKeys = keys.filter(key => key.startsWith(this.CACHE_PREFIX));
+      let totalSize = 0;
+
+      for (const key of cacheKeys) {
+        const item = await AsyncStorage.getItem(key);
+        if (item) {
+          totalSize += new Blob([item]).size;
+        }
+      }
+
+      return totalSize;
+    } catch (error) {
+      console.error('Erreur lors du calcul de la taille du cache:', error);
+      return 0;
+    }
+  }
+
+  static async getCacheInfo(): Promise<{
+    itemCount: number;
+    sizeInBytes: number;
+    sizeInMB: string;
+  }> {
+    try {
+      const keys = await AsyncStorage.getAllKeys();
+      const cacheKeys = keys.filter(key => key.startsWith(this.CACHE_PREFIX));
+      const sizeInBytes = await this.getCacheSize();
+
+      return {
+        itemCount: cacheKeys.length,
+        sizeInBytes,
+        sizeInMB: (sizeInBytes / (1024 * 1024)).toFixed(2),
+      };
+    } catch (error) {
+      console.error('Erreur lors de la récupération des infos du cache:', error);
+      return { itemCount: 0, sizeInBytes: 0, sizeInMB: '0.00' };
+    }
+  }
+}
+
+export const CACHE_KEYS = {
+  SURAHS: 'surahs',
+  VERSES: (surahId: number) => `verses_${surahId}`,
+  TAFSIRS: 'tafsirs',
+  TAFSIR_BY_SURAH: (surahId: number) => `tafsir_surah_${surahId}`,
+  USER_FAVORITES: 'user_favorites',
+  SEARCH_RESULTS: (query: string) => `search_${query}`,
+  AUDIO_METADATA: (tafsirId: number) => `audio_meta_${tafsirId}`,
+};
