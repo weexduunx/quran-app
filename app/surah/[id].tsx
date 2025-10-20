@@ -13,7 +13,7 @@ import { useLocalSearchParams, router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { VerseCard } from '@/components/VerseCard';
-import { AudioPlayer } from '@/components/AudioPlayer';
+import { AudioPlayerSimple as AudioPlayer } from '@/components/AudioPlayerSimple';
 import { useQuranStore, Verse } from '@/stores/quranStore';
 import { quranApi } from '@/services/api';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -55,13 +55,36 @@ export default function SurahScreen() {
     } catch (err) {
       console.error('Error loading surah:', err);
       setError('Erreur lors du chargement de la sourate');
+
+      // Si c'est une erreur JSON, proposer de vider le cache
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+      const isJsonError = errorMessage.includes('JSON Parse error') || errorMessage.includes('SyntaxError');
+
       Alert.alert(
         'Erreur',
-        'Impossible de charger la sourate. Vérifiez votre connexion.',
-        [
-          { text: 'Retour', onPress: () => router.back() },
-          { text: 'Réessayer', onPress: () => loadSurahData(surahId) },
-        ]
+        isJsonError
+          ? 'Données corrompues détectées. Voulez-vous vider le cache et réessayer ?'
+          : 'Impossible de charger la sourate. Vérifiez votre connexion.',
+        isJsonError
+          ? [
+              { text: 'Retour', onPress: () => router.back() },
+              {
+                text: 'Vider le cache',
+                onPress: async () => {
+                  try {
+                    await quranApi.forceClearCache();
+                    console.log('Cache forcé vidé avec succès');
+                  } catch (cacheError) {
+                    console.error('Erreur lors du nettoyage du cache:', cacheError);
+                  }
+                  loadSurahData(surahId);
+                }
+              },
+            ]
+          : [
+              { text: 'Retour', onPress: () => router.back() },
+              { text: 'Réessayer', onPress: () => loadSurahData(surahId) },
+            ]
       );
     } finally {
       setLoading(false);
@@ -135,10 +158,11 @@ export default function SurahScreen() {
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={styles.audioButton}
+          style={styles.learnButton}
           onPress={() => setShowAudioPlayer(true)}
         >
-          <Ionicons name="play-circle" size={28} color="#D4AF37" />
+          <Ionicons name="book" size={20} color="#1B5E20" />
+          <Text style={styles.learnButtonText}>Apprendre</Text>
         </TouchableOpacity>
 
         <View style={styles.surahInfo}>
@@ -288,6 +312,29 @@ const styles = StyleSheet.create({
     padding: 8,
     backgroundColor: 'rgba(0,0,0,0.3)',
     borderRadius: 20,
+  },
+  learnButton: {
+    position: 'absolute',
+    top: 24,
+    right: 20,
+    zIndex: 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: '#D4AF37',
+    borderRadius: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  learnButtonText: {
+    color: '#1B5E20',
+    fontSize: 14,
+    fontWeight: '600',
+    marginLeft: 4,
   },
   ornamentContainer: {
     position: 'absolute',

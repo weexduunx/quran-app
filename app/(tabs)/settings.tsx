@@ -11,6 +11,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { simpleSyncService } from '@/services/simpleSyncService';
 
 interface SettingItem {
   id: string;
@@ -112,7 +113,39 @@ export default function SettingsScreen() {
     },
   ];
 
+  // Test de synchronisation en mode développement
+  const testWordSync = async () => {
+    try {
+      console.log('🧪 Testing word synchronization...');
+      const result = await wordSyncService.getVerseTimingData(
+        1,
+        'ar.alafasy',
+        'بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ',
+        5000
+      );
+
+      Alert.alert(
+        'Test de Synchronisation Réussi !',
+        `Source: ${result.source}\n` +
+        `Précision: ${Math.round(result.accuracy * 100)}%\n` +
+        `Mots: ${result.words.length}\n` +
+        `Premier mot: "${result.words[0]?.arabicText}" (${result.words[0]?.duration}ms)\n` +
+        `Type tajweed détecté: ${result.words[0]?.tajweedInfo?.type || 'normal'}`
+      );
+    } catch (error) {
+      Alert.alert('Erreur', `Test échoué: ${error}`);
+    }
+  };
+
   const actionItems = [
+    // Bouton de test seulement en développement
+    ...(__DEV__ ? [{
+      id: 'testWordSync',
+      title: '🧪 Tester Synchronisation',
+      subtitle: 'Tester le système de synchronisation mot par mot',
+      icon: 'flask',
+      action: testWordSync
+    }] : []),
     {
       id: 'clearCache',
       title: 'Vider le cache',
@@ -124,8 +157,42 @@ export default function SettingsScreen() {
           'Êtes-vous sûr de vouloir vider le cache ? Cela supprimera tous les fichiers audio téléchargés.',
           [
             { text: 'Annuler', style: 'cancel' },
-            { text: 'Vider', style: 'destructive', onPress: () => {
-              Alert.alert('Cache vidé', 'Le cache a été vidé avec succès.');
+            { text: 'Vider', style: 'destructive', onPress: async () => {
+              try {
+                await quranApi.forceClearCache();
+                wordSyncService.clearCache(); // Vider aussi le cache de synchronisation
+                Alert.alert('Cache vidé', 'Le cache a été vidé avec succès.');
+              } catch (error) {
+                console.error('Erreur lors du nettoyage du cache:', error);
+                Alert.alert('Erreur', 'Impossible de vider le cache complètement.');
+              }
+            }}
+          ]
+        );
+      }
+    },
+    {
+      id: 'forceFixData',
+      title: 'Réparer données corrompues',
+      subtitle: 'Forcer le nettoyage en cas d\'erreur JSON',
+      icon: 'build',
+      action: async () => {
+        Alert.alert(
+          'Réparation d\'urgence',
+          'Cette fonction force le nettoyage de toutes les données pour résoudre les erreurs de corruption. Continuer ?',
+          [
+            { text: 'Annuler', style: 'cancel' },
+            { text: 'Réparer', style: 'destructive', onPress: async () => {
+              try {
+                console.log('Démarrage de la réparation d\'urgence...');
+                await quranApi.forceClearCache();
+                simpleSyncService.clearCache();
+                wordSyncService.clearCache();
+                Alert.alert('Réparation terminée', 'Toutes les données ont été nettoyées. Redémarrez l\'application.');
+              } catch (error) {
+                console.error('Erreur lors de la réparation:', error);
+                Alert.alert('Erreur critique', 'Impossible de réparer. Contactez le support.');
+              }
             }}
           ]
         );
@@ -224,11 +291,20 @@ export default function SettingsScreen() {
       onPress={item.action}
     >
       <View style={styles.settingIcon}>
-        <Ionicons name={item.icon} size={20} color="#D32F2F" />
+        <Ionicons
+          name={item.icon}
+          size={20}
+          color={item.id === 'testWordSync' ? '#4CAF50' : '#D32F2F'}
+        />
       </View>
 
       <View style={styles.settingContent}>
-        <Text style={[styles.settingTitle, { color: '#D32F2F' }]}>{item.title}</Text>
+        <Text style={[
+          styles.settingTitle,
+          { color: item.id === 'testWordSync' ? '#4CAF50' : '#D32F2F' }
+        ]}>
+          {item.title}
+        </Text>
         <Text style={styles.settingSubtitle}>{item.subtitle}</Text>
       </View>
 

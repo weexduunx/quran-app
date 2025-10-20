@@ -1,5 +1,7 @@
 import React from 'react';
 import { Text, StyleSheet, TextStyle } from 'react-native';
+import { repairArabicText } from '../utils/textUtils';
+// import { useFonts, Amiri_400Regular } from '@expo-google-fonts/amiri';
 
 interface UthmaniTextProps {
   children: string;
@@ -14,6 +16,7 @@ export const UthmaniText: React.FC<UthmaniTextProps> = ({
   size = 'medium',
   color = '#1B5E20',
 }) => {
+  // Utiliser une police système optimisée pour l'arabe
   const getSizeStyle = () => {
     switch (size) {
       case 'small':
@@ -29,29 +32,32 @@ export const UthmaniText: React.FC<UthmaniTextProps> = ({
     }
   };
 
+  // Utiliser une police système arabique optimisée
+  const fontFamily = 'serif'; // Fallback vers serif qui supporte bien l'arabe
+
   return (
     <Text
       style={[
         styles.uthmaniBase,
         getSizeStyle(),
-        { color },
+        { color, fontFamily },
         style,
       ]}
     >
-      {children}
+      {repairArabicText(children)}
     </Text>
   );
 };
 
 const styles = StyleSheet.create({
   uthmaniBase: {
-    fontFamily: 'NotoSansArabic-Bold', // Fallback à NotoSansArabic en attendant les polices Uthmani
+    fontFamily: 'Uthmanic', // Police Uthmanic principale
     textAlign: 'right',
-    fontWeight: '600',
-    letterSpacing: 1.2,
-    textShadowColor: 'rgba(212, 175, 55, 0.5)',
-    textShadowOffset: { width: 1, height: 1 },
-    textShadowRadius: 3,
+    fontWeight: '400', // Normal pour les polices arabes
+    letterSpacing: 0.8,
+    textShadowColor: 'rgba(212, 175, 55, 0.3)',
+    textShadowOffset: { width: 0.5, height: 0.5 },
+    textShadowRadius: 2,
   },
   smallText: {
     fontSize: 18,

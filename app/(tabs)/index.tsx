@@ -13,6 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { SurahCard } from '@/components/SurahCard';
 import { useQuranStore, Surah } from '@/stores/quranStore';
 import { quranApi } from '@/services/api';
+import { EmergencyCleanup } from '@/utils/emergencyCleanup';
 
 export default function HomeScreen() {
   const {
@@ -29,7 +30,18 @@ export default function HomeScreen() {
   const [filteredSurahs, setFilteredSurahs] = useState<Surah[]>([]);
 
   useEffect(() => {
-    loadSurahs();
+    const initializeApp = async () => {
+      try {
+        // Vérifier et nettoyer le cache corrompu au démarrage
+        console.log('🔍 Vérification du cache au démarrage...');
+        await EmergencyCleanup.diagnoseAndFix(false); // Silencieux au démarrage
+      } catch (error) {
+        console.log('Diagnostic du cache échoué:', error);
+      }
+      loadSurahs();
+    };
+
+    initializeApp();
   }, []);
 
   useEffect(() => {
@@ -54,11 +66,44 @@ export default function HomeScreen() {
     } catch (err) {
       console.error('Error loading surahs:', err);
       setError('Erreur lors du chargement des sourates');
-      Alert.alert(
-        'Erreur',
-        'Impossible de charger les sourates. Vérifiez votre connexion.',
-        [{ text: 'Réessayer', onPress: loadSurahs }]
-      );
+
+      // Détecter si c'est une erreur JSON
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+      const isJsonError = errorMessage.includes('JSON Parse error') || errorMessage.includes('SyntaxError');
+
+      if (isJsonError) {
+        Alert.alert(
+          'Données corrompues',
+          'Des données corrompues ont été détectées. Voulez-vous vider le cache et réessayer ?',
+          [
+            { text: 'Annuler', style: 'cancel' },
+            {
+              text: 'Vider le cache',
+              onPress: async () => {
+                try {
+                  console.log('Tentative de nettoyage forcé...');
+                  const success = await EmergencyCleanup.forceCleanAll();
+                  if (success) {
+                    console.log('Cache forcé vidé - Rechargement des sourates');
+                    setTimeout(() => loadSurahs(), 1000); // Délai pour s'assurer du nettoyage
+                  } else {
+                    Alert.alert('Erreur', 'Impossible de nettoyer le cache');
+                  }
+                } catch (cacheError) {
+                  console.error('Erreur lors du nettoyage du cache:', cacheError);
+                  Alert.alert('Erreur', 'Impossible de nettoyer le cache');
+                }
+              }
+            }
+          ]
+        );
+      } else {
+        Alert.alert(
+          'Erreur',
+          'Impossible de charger les sourates. Vérifiez votre connexion.',
+          [{ text: 'Réessayer', onPress: loadSurahs }]
+        );
+      }
     } finally {
       setLoading(false);
     }

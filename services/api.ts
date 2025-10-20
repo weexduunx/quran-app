@@ -39,7 +39,56 @@ class QuranApiService {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      const result: ApiResponse<T> = await response.json();
+      const textResponse = await response.text();
+      let result: ApiResponse<T>;
+
+      try {
+        // Nettoyage robuste pour éviter les erreurs JSON
+        let cleanedText = textResponse
+          // Supprimer tous les caractères de contrôle et invisibles
+          .replace(/[\u0000-\u001F\u007F-\u009F\uFEFF\uFFFE\uFFFF]/g, '')
+          // Supprimer les séquences unicode malformées
+          .replace(/\\u[\dA-Fa-f]{0,3}(?![0-9A-Fa-f])/g, '')
+          // Nettoyer les caractères NUL
+          .replace(/\0/g, '')
+          .replace(/\x00/g, '');
+
+        // Convertir les séquences unicode valides
+        cleanedText = cleanedText.replace(/\\u([\dA-Fa-f]{4})/g, function(match, grp) {
+          try {
+            return String.fromCharCode(parseInt(grp, 16));
+          } catch (e) {
+            return ''; // Supprimer si conversion échoue
+          }
+        });
+
+        // Vérifier que le texte est un JSON valide
+        cleanedText = cleanedText.trim();
+        if (!cleanedText.startsWith('{') && !cleanedText.startsWith('[')) {
+          // Chercher le début du JSON dans la réponse
+          const jsonStart = cleanedText.search(/[{\[]/);
+          if (jsonStart > 0) {
+            cleanedText = cleanedText.substring(jsonStart);
+            console.log('Found JSON start at position:', jsonStart);
+          } else {
+            throw new Error('No valid JSON structure found in response');
+          }
+        }
+
+        result = JSON.parse(cleanedText);
+      } catch (jsonError) {
+        console.error('JSON Parse Error:', jsonError);
+        console.error('Response length:', textResponse.length);
+        console.error('First 300 chars:', textResponse.substring(0, 300));
+
+        // En cas d'erreur JSON, vider le cache pour cette clé
+        if (cacheKey) {
+          console.log('Clearing corrupted cache for key:', cacheKey);
+          await CacheService.remove(cacheKey);
+        }
+
+        throw new Error(`JSON Parse error: ${jsonError instanceof Error ? jsonError.message : 'Unknown error'}`);
+      }
 
       if (!result.success) {
         throw new Error(result.message || 'API request failed');
@@ -117,6 +166,10 @@ class QuranApiService {
 
   async clearCache(): Promise<void> {
     await CacheService.clear();
+  }
+
+  async forceClearCache(): Promise<void> {
+    await CacheService.forceClear();
   }
 
   async getCacheInfo(): Promise<{

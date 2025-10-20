@@ -19,9 +19,18 @@ export class CacheService {
         expiry: expiry || this.DEFAULT_EXPIRY,
       };
 
+      // Vérifier que les données peuvent être sérialisées en JSON
+      let serializedData: string;
+      try {
+        serializedData = JSON.stringify(cacheItem);
+      } catch (jsonError) {
+        console.error('Impossible de sérialiser les données pour le cache:', jsonError);
+        return;
+      }
+
       await AsyncStorage.setItem(
         this.CACHE_PREFIX + key,
-        JSON.stringify(cacheItem)
+        serializedData
       );
     } catch (error) {
       console.error('Erreur lors de la mise en cache:', error);
@@ -33,7 +42,15 @@ export class CacheService {
       const cached = await AsyncStorage.getItem(this.CACHE_PREFIX + key);
       if (!cached) return null;
 
-      const cacheItem: CacheItem<T> = JSON.parse(cached);
+      let cacheItem: CacheItem<T>;
+      try {
+        cacheItem = JSON.parse(cached);
+      } catch (jsonError) {
+        console.error('Cache JSON parse error for key:', key, jsonError);
+        // Supprimer le cache corrompu
+        await this.remove(key);
+        return null;
+      }
 
       // Vérifier si le cache est expiré
       if (cacheItem.expiry && Date.now() - cacheItem.timestamp > cacheItem.expiry) {
@@ -44,6 +61,12 @@ export class CacheService {
       return cacheItem.data;
     } catch (error) {
       console.error('Erreur lors de la lecture du cache:', error);
+      // En cas d'erreur, supprimer la clé potentiellement corrompue
+      try {
+        await this.remove(key);
+      } catch (removeError) {
+        console.error('Erreur lors de la suppression du cache corrompu:', removeError);
+      }
       return null;
     }
   }
@@ -63,6 +86,32 @@ export class CacheService {
       await AsyncStorage.multiRemove(cacheKeys);
     } catch (error) {
       console.error('Erreur lors du nettoyage du cache:', error);
+    }
+  }
+
+  // Fonction d'urgence pour vider tout le cache en cas de corruption
+  static async forceClear(): Promise<void> {
+    try {
+      console.log('Force clearing all cache due to corruption...');
+      await AsyncStorage.clear();
+      console.log('Cache forcé vidé avec succès');
+    } catch (error) {
+      console.error('Erreur lors du nettoyage forcé du cache:', error);
+      // Essayer une approche alternative
+      try {
+        const keys = await AsyncStorage.getAllKeys();
+        for (const key of keys) {
+          if (key.startsWith(this.CACHE_PREFIX)) {
+            try {
+              await AsyncStorage.removeItem(key);
+            } catch (removeError) {
+              console.error(`Erreur lors de la suppression de ${key}:`, removeError);
+            }
+          }
+        }
+      } catch (finalError) {
+        console.error('Impossible de nettoyer le cache:', finalError);
+      }
     }
   }
 

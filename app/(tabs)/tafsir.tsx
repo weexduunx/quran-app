@@ -6,95 +6,70 @@ import {
   ScrollView,
   TouchableOpacity,
   TextInput,
+  Modal,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-
-interface TafsirBook {
-  id: number;
-  title: string;
-  titleArabic: string;
-  author: string;
-  authorArabic: string;
-  description: string;
-  language: 'arabic' | 'french' | 'both';
-  category: 'classical' | 'modern' | 'contemporary';
-  featured?: boolean;
-}
-
-const tafsirBooks: TafsirBook[] = [
-  {
-    id: 1,
-    title: 'Tafsir Ibn Kathir',
-    titleArabic: 'تفسير ابن كثير',
-    author: 'Ibn Kathir',
-    authorArabic: 'ابن كثير',
-    description: 'L\'un des tafsirs les plus respectés, basé sur le Coran, la Sunnah et les paroles des Compagnons.',
-    language: 'both',
-    category: 'classical',
-    featured: true,
-  },
-  {
-    id: 2,
-    title: 'Tafsir At-Tabari',
-    titleArabic: 'تفسير الطبري',
-    author: 'At-Tabari',
-    authorArabic: 'الطبري',
-    description: 'Le plus ancien tafsir complet existant, source de référence pour tous les commentaires ultérieurs.',
-    language: 'arabic',
-    category: 'classical',
-    featured: true,
-  },
-  {
-    id: 3,
-    title: 'Tafsir Al-Qurtubi',
-    titleArabic: 'تفسير القرطبي',
-    author: 'Al-Qurtubi',
-    authorArabic: 'القرطبي',
-    description: 'Excellent pour comprendre les règles juridiques dérivées du Coran.',
-    language: 'arabic',
-    category: 'classical',
-  },
-  {
-    id: 4,
-    title: 'Fi Zilal Al-Quran',
-    titleArabic: 'في ظلال القرآن',
-    author: 'Sayyid Qutb',
-    authorArabic: 'سيد قطب',
-    description: 'Tafsir moderne qui met l\'accent sur l\'application pratique du Coran dans la vie contemporaine.',
-    language: 'both',
-    category: 'modern',
-  },
-  {
-    id: 5,
-    title: 'Tafsir As-Sa\'di',
-    titleArabic: 'تفسير السعدي',
-    author: 'Abdur-Rahman As-Sa\'di',
-    authorArabic: 'عبد الرحمن السعدي',
-    description: 'Tafsir concis et clair, idéal pour les débutants.',
-    language: 'arabic',
-    category: 'contemporary',
-  },
-];
+import { useTafsirStore, TafsirBook } from '@/stores/tafsirStore';
+import { TafsirViewer } from '@/components/TafsirViewer';
 
 const categories = [
   { id: 'all', name: 'Tous', icon: 'library' },
   { id: 'classical', name: 'Classiques', icon: 'book' },
   { id: 'modern', name: 'Modernes', icon: 'newspaper' },
   { id: 'contemporary', name: 'Contemporains', icon: 'time' },
+  { id: 'favorites', name: 'Favoris', icon: 'heart' },
+  { id: 'wolof', name: 'Wolof', icon: 'earth' },
 ];
 
 export default function TafsirScreen() {
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [showTafsirViewer, setShowTafsirViewer] = useState(false);
+  const [selectedSurah, setSelectedSurah] = useState(1);
+  const [selectedVerse, setSelectedVerse] = useState(1);
 
-  const filteredTafsirs = tafsirBooks.filter(book => {
-    const matchesCategory = selectedCategory === 'all' || book.category === selectedCategory;
+  const {
+    books,
+    selectedBook,
+    setSelectedBook,
+    isFavorite,
+    addToFavorites,
+    removeFromFavorites,
+  } = useTafsirStore();
+
+  const filteredTafsirs = books.filter(book => {
+    if (!book.available) return false;
+
+    const matchesCategory = selectedCategory === 'all' ||
+                           book.category === selectedCategory ||
+                           (selectedCategory === 'favorites' && isFavorite(book.id)) ||
+                           (selectedCategory === 'wolof' && book.language === 'wolof');
+
     const matchesSearch = book.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         book.author.toLowerCase().includes(searchQuery.toLowerCase());
+                         book.author.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                         book.description.toLowerCase().includes(searchQuery.toLowerCase());
+
     return matchesCategory && matchesSearch;
   });
+
+  const handleBookPress = (book: TafsirBook) => {
+    setSelectedBook(book);
+    // Pour la démonstration, utilisons la sourate 1 (Al-Fatiha) et le verset 1
+    setSelectedSurah(1);
+    setSelectedVerse(1);
+    setShowTafsirViewer(true);
+  };
+
+  const handleToggleFavorite = (book: TafsirBook) => {
+    if (isFavorite(book.id)) {
+      removeFromFavorites(book.id);
+    } else {
+      addToFavorites(book.id);
+    }
+  };
 
   const getLanguageIcon = (language: string) => {
     switch (language) {
@@ -109,17 +84,25 @@ export default function TafsirScreen() {
     switch (language) {
       case 'arabic': return 'Arabe';
       case 'french': return 'Français';
+      case 'wolof': return 'Wolof';
       case 'both': return 'Bilingue';
       default: return 'Arabe';
     }
   };
 
-  const renderTafsirCard = (book: TafsirBook) => (
-    <TouchableOpacity key={book.id} style={styles.tafsirCard}>
-      <LinearGradient
-        colors={book.featured ? ['#1B5E20', '#2E7D32'] : ['#FFFFFF', '#F8F6F0']}
-        style={styles.cardGradient}
+  const renderTafsirCard = (book: TafsirBook) => {
+    const isBookFavorite = isFavorite(book.id);
+
+    return (
+      <TouchableOpacity
+        key={book.id}
+        style={styles.tafsirCard}
+        onPress={() => handleBookPress(book)}
       >
+        <LinearGradient
+          colors={book.featured ? ['#1B5E20', '#2E7D32'] : ['#FFFFFF', '#F8F6F0']}
+          style={styles.cardGradient}
+        >
         <View style={styles.cardHeader}>
           <View style={styles.titleContainer}>
             <Text style={[
@@ -185,26 +168,43 @@ export default function TafsirScreen() {
             </Text>
           </View>
 
-          <TouchableOpacity style={[
-            styles.readButton,
-            book.featured && styles.featuredReadButton
-          ]}>
-            <Ionicons
-              name="book-outline"
-              size={16}
-              color={book.featured ? '#1B5E20' : '#FFFFFF'}
-            />
-            <Text style={[
-              styles.readButtonText,
-              book.featured && styles.featuredReadButtonText
-            ]}>
-              Lire
-            </Text>
-          </TouchableOpacity>
+          <View style={styles.cardActions}>
+            <TouchableOpacity
+              style={[
+                styles.readButton,
+                book.featured && styles.featuredReadButton
+              ]}
+              onPress={() => handleBookPress(book)}
+            >
+              <Ionicons
+                name="book-outline"
+                size={16}
+                color={book.featured ? '#1B5E20' : '#FFFFFF'}
+              />
+              <Text style={[
+                styles.readButtonText,
+                book.featured && styles.featuredReadButtonText
+              ]}>
+                Lire
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.favoriteButton}
+              onPress={() => handleToggleFavorite(book)}
+            >
+              <Ionicons
+                name={isBookFavorite ? "heart" : "heart-outline"}
+                size={18}
+                color={isBookFavorite ? "#E91E63" : (book.featured ? '#D4AF37' : '#666')}
+              />
+            </TouchableOpacity>
+          </View>
         </View>
       </LinearGradient>
     </TouchableOpacity>
   );
+};
 
   return (
     <SafeAreaView style={styles.container}>
@@ -285,6 +285,21 @@ export default function TafsirScreen() {
             </Text>
           </View>
         )}
+
+        {/* Modal pour la lecture du Tafsir */}
+        <Modal
+          animationType="slide"
+          presentationStyle="pageSheet"
+          visible={showTafsirViewer}
+          onRequestClose={() => setShowTafsirViewer(false)}
+        >
+          <TafsirViewer
+            surahId={selectedSurah}
+            verseId={selectedVerse}
+            selectedBook={selectedBook}
+            onClose={() => setShowTafsirViewer(false)}
+          />
+        </Modal>
       </ScrollView>
     </SafeAreaView>
   );
@@ -478,6 +493,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    marginTop: 12,
+  },
+  cardActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  favoriteButton: {
+    padding: 8,
   },
   languageTag: {
     flexDirection: 'row',

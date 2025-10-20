@@ -60,83 +60,89 @@ export const VerseCard: React.FC<VerseCardProps> = ({
         animatedStyle,
       ]}
     >
-      <TouchableOpacity
-        style={styles.cardContent}
-        onPress={handlePress}
-        activeOpacity={onPress ? 0.7 : 1}
-        disabled={!onPress}
+      <LinearGradient
+        colors={['#FFFEF7', '#F8F6F0', '#FFFEF7']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.cardGradient}
       >
-        <IslamicOrnament />
+        <TouchableOpacity
+          style={styles.cardContent}
+          onPress={handlePress}
+          activeOpacity={onPress ? 0.8 : 1}
+          disabled={!onPress}
+        >
+          <IslamicOrnament />
 
-        <View style={styles.header}>
-          <LinearGradient
-            colors={['#D4AF37', '#F4E4BC', '#D4AF37']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={styles.verseNumberContainer}
-          >
-            <Text style={styles.verseNumber}>{verse.verse_number}</Text>
-          </LinearGradient>
-
-          {showSurahInfo && verse.surah && (
-            <View style={styles.surahInfo}>
-              <Text style={styles.surahName}>
-                {verse.surah.name_french} ({verse.surah.number})
-              </Text>
-            </View>
-          )}
-        </View>
-
-        <View style={styles.contentContainer}>
-          <View style={styles.arabicContainer}>
-            <UthmaniText
-              size="large"
-              style={styles.arabicText}
+          <View style={styles.header}>
+            <LinearGradient
+              colors={['#D4AF37', '#F4E4BC', '#D4AF37']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.verseNumberContainer}
             >
-              {verse.text_arabic}
-            </UthmaniText>
-            <View style={styles.arabicOrnament}>
-              <View style={styles.diamond} />
-              <View style={styles.smallDiamond} />
-            </View>
+              <Text style={styles.verseNumber}>{verse.verse_number}</Text>
+            </LinearGradient>
+
+            {showSurahInfo && verse.surah && (
+              <View style={styles.surahInfo}>
+                <Text style={styles.surahName}>
+                  {verse.surah.name_french} ({verse.surah.number})
+                </Text>
+              </View>
+            )}
           </View>
 
-          <View style={styles.decorativeLine}>
-            <View style={styles.goldLine} />
-            <View style={styles.centerOrnament}>
-              <View style={styles.ornamentDiamond} />
+          <View style={styles.contentContainer}>
+            <View style={styles.arabicContainer}>
+              <UthmaniText
+                size="large"
+                style={styles.arabicText}
+              >
+                {verse.text_uthmani || verse.text_arabic}
+              </UthmaniText>
+              <View style={styles.arabicOrnament}>
+                <View style={styles.diamond} />
+                <View style={styles.smallDiamond} />
+              </View>
             </View>
-            <View style={styles.goldLine} />
+
+            <View style={styles.decorativeLine}>
+              <View style={styles.goldLine} />
+              <View style={styles.centerOrnament}>
+                <View style={styles.ornamentDiamond} />
+              </View>
+              <View style={styles.goldLine} />
+            </View>
+
+            <Text style={styles.frenchText}>{verse.text_french}</Text>
+
+            {verse.text_transliteration && (
+              <>
+                <View style={styles.lightSeparator} />
+                <Text style={styles.transliterationText}>
+                  {verse.text_transliteration}
+                </Text>
+              </>
+            )}
           </View>
 
-          <Text style={styles.frenchText}>{verse.text_french}</Text>
+          <View style={styles.footer}>
+            <Text style={styles.globalNumber}>Verset {verse.global_number}</Text>
+            {verse.juz && (
+              <Text style={styles.juzInfo}>Juz {verse.juz}</Text>
+            )}
+          </View>
 
-          {verse.text_transliteration && (
-            <>
-              <View style={styles.lightSeparator} />
-              <Text style={styles.transliterationText}>
-                {verse.text_transliteration}
-              </Text>
-            </>
-          )}
-        </View>
-
-        <View style={styles.footer}>
-          <Text style={styles.globalNumber}>Verset {verse.global_number}</Text>
-          {verse.juz && (
-            <Text style={styles.juzInfo}>Juz {verse.juz}</Text>
-          )}
-        </View>
-
-        <IslamicOrnament />
-      </TouchableOpacity>
+          <IslamicOrnament />
+        </TouchableOpacity>
+      </LinearGradient>
     </Animated.View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: '#FFFEF7',
     borderRadius: 16,
     marginHorizontal: 16,
     marginVertical: 8,
@@ -148,6 +154,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.15,
     shadowRadius: 8,
     elevation: 8,
+  },
+  cardGradient: {
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: '#E8DCC0',
   },

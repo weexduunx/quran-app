@@ -1,145 +1,219 @@
-import React from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Image,
+  TextInput,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-
-interface Reciter {
-  id: number;
-  name: string;
-  nameArabic: string;
-  country: string;
-  description: string;
-  featured?: boolean;
-}
-
-const popularReciters: Reciter[] = [
-  {
-    id: 1,
-    name: 'Mishary Rashid Al-Afasy',
-    nameArabic: 'مشاري بن راشد العفاسي',
-    country: 'Koweït',
-    description: 'L\'une des voix les plus célèbres du monde islamique',
-    featured: true,
-  },
-  {
-    id: 2,
-    name: 'Abdul Rahman Al-Sudais',
-    nameArabic: 'عبد الرحمن السديس',
-    country: 'Arabie Saoudite',
-    description: 'Imam de la Grande Mosquée de La Mecque',
-    featured: true,
-  },
-  {
-    id: 3,
-    name: 'Saad Al-Ghamidi',
-    nameArabic: 'سعد الغامدي',
-    country: 'Arabie Saoudite',
-    description: 'Réputé pour sa voix mélodieuse et émouvante',
-  },
-  {
-    id: 4,
-    name: 'Ahmed Ali Al-Ajmi',
-    nameArabic: 'أحمد علي العجمي',
-    country: 'Arabie Saoudite',
-    description: 'Connu pour ses récitations expressives',
-  },
-  {
-    id: 5,
-    name: 'Maher Al-Muaiqly',
-    nameArabic: 'ماهر المعيقلي',
-    country: 'Arabie Saoudite',
-    description: 'Imam de la Mosquée du Prophète à Médine',
-  },
-  {
-    id: 6,
-    name: 'Nasser Al-Qatami',
-    nameArabic: 'ناصر القطامي',
-    country: 'Arabie Saoudite',
-    description: 'Voix puissante et récitation précise',
-  },
-];
+import { useReciterStore, Reciter } from '@/stores/reciterStore';
 
 export default function HafizScreen() {
-  const renderReciterCard = (reciter: Reciter) => (
-    <TouchableOpacity key={reciter.id} style={styles.reciterCard}>
-      <LinearGradient
-        colors={reciter.featured ? ['#1B5E20', '#2E7D32'] : ['#F5F5F5', '#FFFFFF']}
-        style={styles.cardGradient}
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState('all');
+
+  const {
+    reciters,
+    selectedReciter,
+    setSelectedReciter,
+    addToFavorites,
+    removeFromFavorites,
+    isFavorite,
+  } = useReciterStore();
+
+  const filteredReciters = reciters.filter(reciter => {
+    const matchesSearch = reciter.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                         reciter.nameArabic.includes(searchQuery) ||
+                         reciter.country.toLowerCase().includes(searchQuery.toLowerCase());
+
+    const matchesCategory = selectedCategory === 'all' ||
+                           (selectedCategory === 'featured' && reciter.featured) ||
+                           (selectedCategory === 'favorites' && isFavorite(reciter.id));
+
+    return matchesSearch && matchesCategory;
+  });
+
+  const handleReciterSelect = (reciter: Reciter) => {
+    setSelectedReciter(reciter);
+    Alert.alert(
+      'Récitateur sélectionné',
+      `${reciter.name} est maintenant votre récitateur par défaut.`,
+      [{ text: 'OK' }]
+    );
+  };
+
+  const handleToggleFavorite = (reciter: Reciter) => {
+    if (isFavorite(reciter.id)) {
+      removeFromFavorites(reciter.id);
+    } else {
+      addToFavorites(reciter.id);
+    }
+  };
+
+  const categories = [
+    { id: 'all', name: 'Tous', icon: 'library' },
+    { id: 'featured', name: 'Populaires', icon: 'star' },
+    { id: 'favorites', name: 'Favoris', icon: 'heart' },
+  ];
+
+  const renderReciterCard = (reciter: Reciter) => {
+    const isSelected = selectedReciter?.id === reciter.id;
+    const isReciterFavorite = isFavorite(reciter.id);
+
+    // Vérification des données du récitateur
+    if (!reciter || !reciter.name || !reciter.id) {
+      return null;
+    }
+
+    // Mémorisons les styles pour éviter les recalculs inutiles
+    const cardStyles = useMemo(() => {
+      const getTextStyle = (baseStyle: any, selectedStyle: any, featuredStyle: any, normalStyle: any) => {
+        if (isSelected) return [baseStyle, selectedStyle];
+        if (reciter.featured) return [baseStyle, featuredStyle];
+        return [baseStyle, normalStyle];
+      };
+
+      const gradientColors: [string, string] = isSelected
+        ? ['#4CAF50', '#66BB6A']
+        : reciter.featured
+          ? ['#1B5E20', '#2E7D32']
+          : ['#F5F5F5', '#FFFFFF'];
+
+      const iconColor = isSelected
+        ? '#E8F5E8'
+        : reciter.featured
+          ? '#A5D6A7'
+          : '#666';
+
+      return {
+        getTextStyle,
+        gradientColors,
+        iconColor
+      };
+    }, [isSelected, reciter.featured]);
+
+    return (
+      <TouchableOpacity
+        key={`reciter-${reciter.id}-${isSelected ? 'selected' : 'unselected'}`}
+        style={[styles.reciterCard, isSelected && styles.selectedCard]}
+        onPress={() => handleReciterSelect(reciter)}
       >
-        <View style={styles.cardContent}>
-          <View style={styles.reciterInfo}>
-            <Text style={[
-              styles.reciterName,
-              reciter.featured && styles.featuredText
-            ]}>
-              {reciter.name}
-            </Text>
-            <Text style={[
-              styles.reciterNameArabic,
-              reciter.featured && styles.featuredArabicText
-            ]}>
-              {reciter.nameArabic}
-            </Text>
-            <View style={styles.locationContainer}>
-              <Ionicons
-                name="location"
-                size={14}
-                color={reciter.featured ? '#A5D6A7' : '#666'}
-              />
-              <Text style={[
-                styles.country,
-                reciter.featured && styles.featuredCountryText
-              ]}>
-                {reciter.country}
+        <LinearGradient
+          colors={cardStyles.gradientColors}
+          style={styles.cardGradient}
+        >
+          <View style={styles.cardContent}>
+            <View style={styles.reciterInfo}>
+              <View style={styles.reciterHeader}>
+                <Text style={cardStyles.getTextStyle(
+                  styles.reciterName,
+                  styles.selectedNameText,
+                  styles.featuredText,
+                  styles.normalText
+                )}>
+                  {reciter.name}
+                </Text>
+                {isSelected && (
+                  <View style={styles.selectedBadge}>
+                    <Ionicons name="checkmark-circle" size={14} color="#FFFFFF" />
+                    <Text style={styles.selectedText}>Sélectionné</Text>
+                  </View>
+                )}
+              </View>
+              <Text style={cardStyles.getTextStyle(
+                styles.reciterNameArabic,
+                styles.selectedArabicText,
+                styles.featuredArabicText,
+                styles.normalArabicText
+              )}>
+                {reciter.nameArabic}
+              </Text>
+              <View style={styles.locationContainer}>
+                <Ionicons
+                  name="location"
+                  size={14}
+                  color={cardStyles.iconColor}
+                />
+                <Text style={cardStyles.getTextStyle(
+                  styles.country,
+                  styles.selectedCountryText,
+                  styles.featuredCountryText,
+                  styles.normalCountryText
+                )}>
+                  {reciter.country}
+                </Text>
+                {reciter.style && (
+                  <>
+                    <Text style={cardStyles.getTextStyle(
+                      styles.country,
+                      styles.selectedCountryText,
+                      styles.featuredCountryText,
+                      styles.normalCountryText
+                    )}> • </Text>
+                    <Text style={cardStyles.getTextStyle(
+                      styles.country,
+                      styles.selectedCountryText,
+                      styles.featuredCountryText,
+                      styles.normalCountryText
+                    )}>
+                      {reciter.style}
+                    </Text>
+                  </>
+                )}
+              </View>
+              <Text style={cardStyles.getTextStyle(
+                styles.description,
+                styles.selectedDescriptionText,
+                styles.featuredDescriptionText,
+                styles.normalDescriptionText
+              )}>
+                {reciter.description}
               </Text>
             </View>
-            <Text style={[
-              styles.description,
-              reciter.featured && styles.featuredDescriptionText
-            ]}>
-              {reciter.description}
-            </Text>
+
+            <View style={styles.cardActions}>
+              <TouchableOpacity
+                style={[
+                  styles.playButton,
+                  reciter.featured && styles.featuredPlayButton
+                ]}
+                onPress={() => handleReciterSelect(reciter)}
+              >
+                <Ionicons
+                  name={isSelected ? "checkmark" : "play"}
+                  size={20}
+                  color={reciter.featured ? '#1B5E20' : '#FFFFFF'}
+                />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.favoriteButton}
+                onPress={() => handleToggleFavorite(reciter)}
+              >
+                <Ionicons
+                  name={isReciterFavorite ? "heart" : "heart-outline"}
+                  size={18}
+                  color={isReciterFavorite ? "#E91E63" : (reciter.featured ? '#D4AF37' : '#666')}
+                />
+              </TouchableOpacity>
+            </View>
           </View>
 
-          <View style={styles.cardActions}>
-            <TouchableOpacity style={[
-              styles.playButton,
-              reciter.featured && styles.featuredPlayButton
-            ]}>
-              <Ionicons
-                name="play"
-                size={20}
-                color={reciter.featured ? '#1B5E20' : '#FFFFFF'}
-              />
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.favoriteButton}>
-              <Ionicons
-                name="heart-outline"
-                size={18}
-                color={reciter.featured ? '#D4AF37' : '#666'}
-              />
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {reciter.featured && (
-          <View style={styles.featuredBadge}>
-            <Ionicons name="star" size={12} color="#D4AF37" />
-            <Text style={styles.featuredBadgeText}>Populaire</Text>
-          </View>
-        )}
-      </LinearGradient>
-    </TouchableOpacity>
-  );
+          {reciter.featured && (
+            <View style={styles.featuredBadge}>
+              <Ionicons name="star" size={12} color="#D4AF37" />
+              <Text style={styles.featuredBadgeText}>Populaire</Text>
+            </View>
+          )}
+        </LinearGradient>
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -157,45 +231,84 @@ export default function HafizScreen() {
 
         <View style={styles.searchContainer}>
           <Ionicons name="search" size={20} color="#666" />
-          <Text style={styles.searchPlaceholder}>Rechercher un récitateur...</Text>
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Rechercher un récitateur..."
+            placeholderTextColor="#666"
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+          />
         </View>
       </LinearGradient>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        {selectedReciter && (
+          <View style={styles.currentReciterSection}>
+            <View style={styles.sectionHeader}>
+              <Ionicons name="checkmark-circle" size={20} color="#4CAF50" />
+              <Text style={styles.sectionTitle}>Récitateur Actuel</Text>
+            </View>
+            <View style={styles.currentReciterCard}>
+              <Text style={styles.currentReciterName}>{selectedReciter.name}</Text>
+              <Text style={styles.currentReciterArabic}>{selectedReciter.nameArabic}</Text>
+              <Text style={styles.currentReciterCountry}>{selectedReciter.country}</Text>
+            </View>
+          </View>
+        )}
+
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.categoriesContainer}
+          contentContainerStyle={styles.categoriesContent}
+        >
+          {categories.map((category) => (
+            <TouchableOpacity
+              key={category.id}
+              style={[
+                styles.categoryButton,
+                selectedCategory === category.id && styles.activeCategoryButton
+              ]}
+              onPress={() => setSelectedCategory(category.id)}
+            >
+              <Ionicons
+                name={category.icon as any}
+                size={16}
+                color={selectedCategory === category.id ? '#FFFFFF' : '#1B5E20'}
+              />
+              <Text style={[
+                styles.categoryButtonText,
+                selectedCategory === category.id && styles.activeCategoryButtonText
+              ]}>
+                {category.name}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+
         <View style={styles.sectionHeader}>
-          <Ionicons name="star" size={20} color="#D4AF37" />
-          <Text style={styles.sectionTitle}>Récitateurs Populaires</Text>
+          <Ionicons name="person-circle" size={20} color="#D4AF37" />
+          <Text style={styles.sectionTitle}>
+            {selectedCategory === 'all' ? 'Tous les Récitateurs' :
+             selectedCategory === 'featured' ? 'Récitateurs Populaires' :
+             selectedCategory === 'favorites' ? 'Mes Favoris' : 'Récitateurs'}
+          </Text>
+          <Text style={styles.resultCount}>({filteredReciters.length})</Text>
         </View>
 
         <View style={styles.recitersList}>
-          {popularReciters.map(renderReciterCard)}
+          {filteredReciters.map(renderReciterCard)}
         </View>
 
-        <View style={styles.categoriesSection}>
-          <Text style={styles.sectionTitle}>Parcourir par catégorie</Text>
-
-          <View style={styles.categoriesGrid}>
-            <TouchableOpacity style={styles.categoryCard}>
-              <Ionicons name="library" size={24} color="#1B5E20" />
-              <Text style={styles.categoryText}>Lecture complète</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.categoryCard}>
-              <Ionicons name="musical-notes" size={24} color="#1B5E20" />
-              <Text style={styles.categoryText}>Tajweed</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.categoryCard}>
-              <Ionicons name="time" size={24} color="#1B5E20" />
-              <Text style={styles.categoryText}>Récentes</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.categoryCard}>
-              <Ionicons name="heart" size={24} color="#1B5E20" />
-              <Text style={styles.categoryText}>Favoris</Text>
-            </TouchableOpacity>
+        {filteredReciters.length === 0 && (
+          <View style={styles.emptyContainer}>
+            <Ionicons name="person-outline" size={48} color="#ccc" />
+            <Text style={styles.emptyText}>Aucun récitateur trouvé</Text>
+            <Text style={styles.emptySubtext}>
+              Essayez de modifier vos critères de recherche
+            </Text>
           </View>
-        </View>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -241,10 +354,12 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     marginTop: 8,
   },
-  searchPlaceholder: {
+  searchInput: {
+    flex: 1,
     marginLeft: 12,
-    color: '#666',
     fontSize: 16,
+    color: '#333',
+    paddingVertical: 8,
   },
   content: {
     flex: 1,
@@ -294,6 +409,8 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#333',
     marginBottom: 4,
+    flex: 1,
+    flexWrap: 'wrap',
   },
   featuredText: {
     color: '#FFFFFF',
@@ -396,5 +513,151 @@ const styles = StyleSheet.create({
     marginTop: 8,
     fontWeight: '600',
     textAlign: 'center',
+  },
+  // Nouveaux styles
+  selectedCard: {
+    borderWidth: 2,
+    borderColor: '#4CAF50',
+  },
+  reciterHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+    minHeight: 24,
+  },
+  selectedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderRadius: 12,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    marginLeft: 8,
+    flexShrink: 0,
+  },
+  selectedText: {
+    fontSize: 12,
+    color: '#FFFFFF',
+    marginLeft: 2,
+    fontWeight: 'bold',
+  },
+  currentReciterSection: {
+    marginBottom: 24,
+  },
+  currentReciterCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 16,
+    marginHorizontal: 4,
+    borderWidth: 1,
+    borderColor: '#4CAF50',
+    shadowColor: '#4CAF50',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  currentReciterName: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#1B5E20',
+    textAlign: 'center',
+  },
+  currentReciterArabic: {
+    fontSize: 18,
+    color: '#4CAF50',
+    fontFamily: 'NotoSansArabic-Bold',
+    textAlign: 'center',
+    marginTop: 4,
+  },
+  currentReciterCountry: {
+    fontSize: 14,
+    color: '#666',
+    textAlign: 'center',
+    marginTop: 4,
+  },
+  categoriesContainer: {
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  categoriesContent: {
+    paddingHorizontal: 4,
+    paddingRight: 40,
+  },
+  categoryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    marginRight: 12,
+    borderWidth: 1,
+    borderColor: '#E8DCC0',
+  },
+  activeCategoryButton: {
+    backgroundColor: '#1B5E20',
+    borderColor: '#1B5E20',
+  },
+  categoryButtonText: {
+    fontSize: 14,
+    color: '#1B5E20',
+    marginLeft: 6,
+    fontWeight: '600',
+  },
+  activeCategoryButtonText: {
+    color: '#FFFFFF',
+  },
+  resultCount: {
+    fontSize: 14,
+    color: '#666',
+    marginLeft: 4,
+  },
+  emptyContainer: {
+    alignItems: 'center',
+    paddingVertical: 48,
+    paddingHorizontal: 20,
+  },
+  emptyText: {
+    fontSize: 18,
+    color: '#666',
+    marginTop: 16,
+    fontWeight: '600',
+  },
+  emptySubtext: {
+    fontSize: 14,
+    color: '#888',
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  // Styles pour les récitateurs sélectionnés
+  selectedNameText: {
+    color: '#FFFFFF',
+  },
+  selectedArabicText: {
+    color: '#E8F5E8',
+  },
+  selectedCountryText: {
+    color: '#E8F5E8',
+  },
+  selectedDescriptionText: {
+    color: '#F1F8E9',
+  },
+  // Styles pour les récitateurs normaux (non-featured, non-selected)
+  normalText: {
+    color: '#333',
+  },
+  normalArabicText: {
+    color: '#666',
+  },
+  normalCountryText: {
+    color: '#666',
+  },
+  normalDescriptionText: {
+    color: '#888',
   },
 });
