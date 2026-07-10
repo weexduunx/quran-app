@@ -130,7 +130,7 @@ class QuranApiService {
   }
 
   async getVersesBySurah(surahId: number): Promise<Verse[]> {
-    return this.fetchApi<Verse[]>(`/verses/surah/${surahId}`, CACHE_KEYS.VERSES(surahId));
+    return this.fetchApi<Verse[]>(`/verses/surah/${surahId}`, CACHE_KEYS.VERSES_LIST(surahId));
   }
 
   async getVerse(id: number): Promise<Verse> {

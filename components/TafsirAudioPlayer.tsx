@@ -205,13 +205,13 @@ export const TafsirAudioPlayer: React.FC<TafsirAudioPlayerProps> = ({
           {/* Informations du verset */}
           <View style={styles.verseInfo}>
             <Text style={styles.verseTitle}>
-              {verse.surah?.name_simple} - Verset {verse.verse_number}
+              {verse.surah?.name_french} - Verset {verse.verse_number}
             </Text>
             <Text style={styles.verseArabic}>
               {verse.surah?.name_arabic}
             </Text>
             <Text style={styles.verseText}>
-              {verse.text_uthmani}
+              {verse.text_arabic}
             </Text>
           </View>
 

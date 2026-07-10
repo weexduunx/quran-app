@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -14,6 +14,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTafsirStore, TafsirBook } from '@/stores/tafsirStore';
 import { TafsirViewer } from '@/components/TafsirViewer';
+import { quranApi } from '@/services/api';
+import { Surah, Verse } from '@/stores/quranStore';
+
+const TOTAL_SURAHS = 114;
 
 const categories = [
   { id: 'all', name: 'Tous', icon: 'library' },
@@ -30,6 +34,44 @@ export default function TafsirScreen() {
   const [showTafsirViewer, setShowTafsirViewer] = useState(false);
   const [selectedSurah, setSelectedSurah] = useState(1);
   const [selectedVerse, setSelectedVerse] = useState(1);
+  const [selectedVerseObj, setSelectedVerseObj] = useState<Verse | null>(null);
+  const [surahs, setSurahs] = useState<Surah[]>([]);
+
+  // Liste des sourates pour la navigation dans le viewer de tafsir
+  useEffect(() => {
+    quranApi.getSurahs().then(setSurahs).catch((error) => {
+      console.error('Erreur lors du chargement des sourates:', error);
+    });
+  }, []);
+
+  // Récupère le verset réel correspondant à la sourate/verset sélectionnés,
+  // nécessaire pour le lecteur audio du tafsir (sans ça, le bouton "Écouter
+  // le Tafsir en Audio" ne fait rien : TafsirAudioPlayer exige une verse valide)
+  useEffect(() => {
+    if (!showTafsirViewer) return;
+
+    let cancelled = false;
+    quranApi.getVersesBySurah(selectedSurah).then((verses) => {
+      if (cancelled) return;
+      const verse = verses.find((v) => v.verse_number === selectedVerse) || null;
+      setSelectedVerseObj(verse);
+    }).catch((error) => {
+      console.error('Erreur lors du chargement du verset pour le tafsir:', error);
+      setSelectedVerseObj(null);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [showTafsirViewer, selectedSurah, selectedVerse]);
+
+  const handleNavigateSurah = (direction: 'previous' | 'next') => {
+    setSelectedSurah((current) => {
+      const next = direction === 'next' ? current + 1 : current - 1;
+      return Math.min(TOTAL_SURAHS, Math.max(1, next));
+    });
+    setSelectedVerse(1);
+  };
 
   const {
     books,
@@ -285,22 +327,29 @@ export default function TafsirScreen() {
             </Text>
           </View>
         )}
-
-        {/* Modal pour la lecture du Tafsir */}
-        <Modal
-          animationType="slide"
-          presentationStyle="pageSheet"
-          visible={showTafsirViewer}
-          onRequestClose={() => setShowTafsirViewer(false)}
-        >
-          <TafsirViewer
-            surahId={selectedSurah}
-            verseId={selectedVerse}
-            selectedBook={selectedBook}
-            onClose={() => setShowTafsirViewer(false)}
-          />
-        </Modal>
       </ScrollView>
+
+      {/* Modal pour la lecture du Tafsir : hors du ScrollView, sinon RN peut
+          mal mesurer/positionner son contenu (header qui semble sortir du cadre) */}
+      <Modal
+        animationType="slide"
+        presentationStyle="pageSheet"
+        visible={showTafsirViewer}
+        onRequestClose={() => setShowTafsirViewer(false)}
+      >
+        <TafsirViewer
+          surahId={selectedSurah}
+          verseId={selectedVerse}
+          verse={selectedVerseObj || undefined}
+          surahName={surahs.find((s) => s.number === selectedSurah)?.name_french}
+          canGoPrevious={selectedSurah > 1}
+          canGoNext={selectedSurah < TOTAL_SURAHS}
+          onPreviousSurah={() => handleNavigateSurah('previous')}
+          onNextSurah={() => handleNavigateSurah('next')}
+          selectedBook={selectedBook}
+          onClose={() => setShowTafsirViewer(false)}
+        />
+      </Modal>
     </SafeAreaView>
   );
 }

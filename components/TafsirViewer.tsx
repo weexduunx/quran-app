@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTafsirStore, TafsirBook, TafsirContent } from '@/stores/tafsirStore';
 import { tafsirApi } from '@/services/tafsirApi';
 import { UthmaniText } from './UthmaniText';
@@ -20,6 +21,11 @@ interface TafsirViewerProps {
   surahId: number;
   verseId: number;
   verse?: Verse;
+  surahName?: string;
+  canGoPrevious?: boolean;
+  canGoNext?: boolean;
+  onPreviousSurah?: () => void;
+  onNextSurah?: () => void;
   selectedBook?: TafsirBook | null;
   onClose: () => void;
 }
@@ -28,6 +34,11 @@ export const TafsirViewer: React.FC<TafsirViewerProps> = ({
   surahId,
   verseId,
   verse,
+  surahName,
+  canGoPrevious,
+  canGoNext,
+  onPreviousSurah,
+  onNextSurah,
   selectedBook,
   onClose,
 }) => {
@@ -46,6 +57,13 @@ export const TafsirViewer: React.FC<TafsirViewerProps> = ({
   } = useTafsirStore();
 
   const availableBooks = books.filter(book => book.available);
+
+  // Le Modal parent reste monté même caché : sans ceci, en rouvrant le viewer
+  // avec un autre livre, selectedBookState garde la valeur de la toute première
+  // ouverture (useState ne se réinitialise pas tout seul depuis une prop).
+  useEffect(() => {
+    setSelectedBookState(selectedBook || null);
+  }, [selectedBook]);
 
   useEffect(() => {
     if (selectedBookState) {
@@ -120,7 +138,7 @@ export const TafsirViewer: React.FC<TafsirViewerProps> = ({
   };
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <LinearGradient
         colors={['#1B5E20', '#2E7D32', '#1B5E20']}
         style={styles.header}
@@ -132,10 +150,39 @@ export const TafsirViewer: React.FC<TafsirViewerProps> = ({
         <View style={styles.headerContent}>
           <Text style={styles.headerTitle}>Tafsir</Text>
           <Text style={styles.headerSubtitle}>
-            Sourate {surahId} - Verset {verseId}
+            Sourate {surahId}{surahName ? ` - ${surahName}` : ''}
           </Text>
         </View>
+
+        <View style={styles.placeholder} />
       </LinearGradient>
+
+      {/* Navigation entre sourates */}
+      {(onPreviousSurah || onNextSurah) && (
+        <View style={styles.surahNavContainer}>
+          <TouchableOpacity
+            onPress={onPreviousSurah}
+            disabled={!canGoPrevious}
+            style={[styles.surahNavButton, !canGoPrevious && styles.surahNavButtonDisabled]}
+          >
+            <Ionicons name="chevron-back" size={18} color={canGoPrevious ? '#1B5E20' : '#ccc'} />
+            <Text style={[styles.surahNavText, !canGoPrevious && styles.surahNavTextDisabled]}>
+              Sourate précédente
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={onNextSurah}
+            disabled={!canGoNext}
+            style={[styles.surahNavButton, !canGoNext && styles.surahNavButtonDisabled]}
+          >
+            <Text style={[styles.surahNavText, !canGoNext && styles.surahNavTextDisabled]}>
+              Sourate suivante
+            </Text>
+            <Ionicons name="chevron-forward" size={18} color={canGoNext ? '#1B5E20' : '#ccc'} />
+          </TouchableOpacity>
+        </View>
+      )}
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         {/* Sélection du livre de tafsir */}
@@ -282,7 +329,7 @@ export const TafsirViewer: React.FC<TafsirViewerProps> = ({
           content={tafsirContent || undefined}
         />
       )}
-    </View>
+    </SafeAreaView>
   );
 };
 
@@ -319,6 +366,37 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#A5D6A7',
     marginTop: 4,
+  },
+  placeholder: {
+    width: 40,
+  },
+  surahNavContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E8DCC0',
+  },
+  surahNavButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+  },
+  surahNavButtonDisabled: {
+    opacity: 0.5,
+  },
+  surahNavText: {
+    fontSize: 13,
+    color: '#1B5E20',
+    fontWeight: '600',
+    marginHorizontal: 4,
+  },
+  surahNavTextDisabled: {
+    color: '#ccc',
   },
   content: {
     flex: 1,

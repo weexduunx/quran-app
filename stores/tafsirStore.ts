@@ -49,7 +49,34 @@ interface TafsirState {
 }
 
 // Liste des livres de Tafsir disponibles
+// Les tafsirs audio en wolof (Baye Niasse, Moustapha Gueye) sont mis en avant en premier
 export const tafsirBooks: TafsirBook[] = [
+  {
+    id: 6,
+    title: 'Tafsir Baye Niasse',
+    titleArabic: 'تفسير الشيخ إبراهيم نياس',
+    author: 'Cheikh Ibrahima Niasse (Baye Niasse)',
+    authorArabic: 'الشيخ إبراهيم نياس',
+    description: "Tafsir audio en wolof par le fondateur du mouvement niassène, sourate par sourate.",
+    language: 'wolof',
+    category: 'contemporary',
+    featured: true,
+    available: true,
+    apiId: 'baye-niasse'
+  },
+  {
+    id: 7,
+    title: 'Tafsir Imam Moustapha Gueye',
+    titleArabic: 'تفسير الإمام مصطفى غاي',
+    author: 'Imam Moustapha Gueye',
+    authorArabic: 'الإمام مصطفى غاي',
+    description: 'Explications audio du Coran en wolof par un éminent savant sénégalais, adapté au contexte local.',
+    language: 'wolof',
+    category: 'contemporary',
+    featured: true,
+    available: true,
+    apiId: 'moustapha-gueye'
+  },
   {
     id: 1,
     title: 'Tafsir Ibn Kathir',
@@ -111,33 +138,6 @@ export const tafsirBooks: TafsirBook[] = [
     category: 'contemporary',
     available: true,
     apiId: 'as-sadi'
-  },
-  // Tafsirs en Wolof avec audio
-  {
-    id: 6,
-    title: 'Tafsir Hady Niasse',
-    titleArabic: 'تفسير الحاج نياس',
-    author: 'Hady Niasse',
-    authorArabic: 'الحاج نياس',
-    description: 'Tafsir audio en wolof par le célèbre érudit sénégalais, facilitant la compréhension pour les locuteurs wolof.',
-    language: 'wolof',
-    category: 'contemporary',
-    featured: true,
-    available: true,
-    apiId: 'hady-niasse'
-  },
-  {
-    id: 7,
-    title: 'Tafsir Imam Moustapha Gueye',
-    titleArabic: 'تفسير الإمام مصطفى غاي',
-    author: 'Imam Moustapha Gueye',
-    authorArabic: 'الإمام مصطفى غاي',
-    description: 'Explications audio du Coran en wolof par un éminent savant sénégalais, adapté au contexte local.',
-    language: 'wolof',
-    category: 'contemporary',
-    featured: true,
-    available: true,
-    apiId: 'moustapha-gueye'
   }
 ];
 
@@ -193,6 +193,13 @@ export const useTafsirStore = create<TafsirState>()(
     {
       name: 'tafsir-storage',
       storage: createJSONStorage(() => AsyncStorage),
+      version: 1, // Nouvel ordre des tafsirs + Baye Niasse/Ahmadou Bamba mis à jour
+      migrate: (persistedState: any, version) => {
+        if (version < 1) {
+          return { ...persistedState, books: tafsirBooks };
+        }
+        return persistedState;
+      },
     }
   )
 );

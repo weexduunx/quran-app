@@ -164,7 +164,13 @@ export class CacheService {
 
 export const CACHE_KEYS = {
   SURAHS: 'surahs',
+  // Utilisé par quranApi.getSurah() : cache un objet Surah & { verses: Verse[] }
   VERSES: (surahId: number) => `verses_${surahId}`,
+  // Utilisé par quranApi.getVersesBySurah() : cache un tableau Verse[] brut.
+  // Distinct de VERSES ci-dessus (même surahId, formes de données différentes) -
+  // partager la même clé provoquait un TypeError ("verses.find is not a function")
+  // quand l'un était lu après avoir été peuplé par l'autre.
+  VERSES_LIST: (surahId: number) => `verses_list_${surahId}`,
   TAFSIRS: 'tafsirs',
   TAFSIR_BY_SURAH: (surahId: number) => `tafsir_surah_${surahId}`,
   USER_FAVORITES: 'user_favorites',
