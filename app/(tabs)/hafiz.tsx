@@ -70,32 +70,24 @@ export default function HafizScreen() {
       return null;
     }
 
-    // Mémorisons les styles pour éviter les recalculs inutiles
-    const cardStyles = useMemo(() => {
-      const getTextStyle = (baseStyle: any, selectedStyle: any, featuredStyle: any, normalStyle: any) => {
-        if (isSelected) return [baseStyle, selectedStyle];
-        if (reciter.featured) return [baseStyle, featuredStyle];
-        return [baseStyle, normalStyle];
-      };
+    // Styles pour la carte
+    const getTextStyle = (baseStyle: any, selectedStyle: any, featuredStyle: any, normalStyle: any) => {
+      if (isSelected) return [baseStyle, selectedStyle];
+      if (reciter.featured) return [baseStyle, featuredStyle];
+      return [baseStyle, normalStyle];
+    };
 
-      const gradientColors: [string, string] = isSelected
-        ? ['#4CAF50', '#66BB6A']
-        : reciter.featured
-          ? ['#1B5E20', '#2E7D32']
-          : ['#F5F5F5', '#FFFFFF'];
+    const gradientColors: [string, string] = isSelected
+      ? ['#4CAF50', '#66BB6A']
+      : reciter.featured
+        ? ['#1B5E20', '#2E7D32']
+        : ['#F5F5F5', '#FFFFFF'];
 
-      const iconColor = isSelected
-        ? '#E8F5E8'
-        : reciter.featured
-          ? '#A5D6A7'
-          : '#666';
-
-      return {
-        getTextStyle,
-        gradientColors,
-        iconColor
-      };
-    }, [isSelected, reciter.featured]);
+    const iconColor = isSelected
+      ? '#E8F5E8'
+      : reciter.featured
+        ? '#A5D6A7'
+        : '#666';
 
     return (
       <TouchableOpacity
@@ -104,13 +96,13 @@ export default function HafizScreen() {
         onPress={() => handleReciterSelect(reciter)}
       >
         <LinearGradient
-          colors={cardStyles.gradientColors}
+          colors={gradientColors}
           style={styles.cardGradient}
         >
           <View style={styles.cardContent}>
             <View style={styles.reciterInfo}>
               <View style={styles.reciterHeader}>
-                <Text style={cardStyles.getTextStyle(
+                <Text style={getTextStyle(
                   styles.reciterName,
                   styles.selectedNameText,
                   styles.featuredText,
@@ -125,7 +117,7 @@ export default function HafizScreen() {
                   </View>
                 )}
               </View>
-              <Text style={cardStyles.getTextStyle(
+              <Text style={getTextStyle(
                 styles.reciterNameArabic,
                 styles.selectedArabicText,
                 styles.featuredArabicText,
@@ -137,9 +129,9 @@ export default function HafizScreen() {
                 <Ionicons
                   name="location"
                   size={14}
-                  color={cardStyles.iconColor}
+                  color={iconColor}
                 />
-                <Text style={cardStyles.getTextStyle(
+                <Text style={getTextStyle(
                   styles.country,
                   styles.selectedCountryText,
                   styles.featuredCountryText,
@@ -149,13 +141,13 @@ export default function HafizScreen() {
                 </Text>
                 {reciter.style && (
                   <>
-                    <Text style={cardStyles.getTextStyle(
+                    <Text style={getTextStyle(
                       styles.country,
                       styles.selectedCountryText,
                       styles.featuredCountryText,
                       styles.normalCountryText
                     )}> • </Text>
-                    <Text style={cardStyles.getTextStyle(
+                    <Text style={getTextStyle(
                       styles.country,
                       styles.selectedCountryText,
                       styles.featuredCountryText,
@@ -166,7 +158,7 @@ export default function HafizScreen() {
                   </>
                 )}
               </View>
-              <Text style={cardStyles.getTextStyle(
+              <Text style={getTextStyle(
                 styles.description,
                 styles.selectedDescriptionText,
                 styles.featuredDescriptionText,

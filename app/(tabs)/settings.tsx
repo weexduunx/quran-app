@@ -11,7 +11,9 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { simpleSyncService } from '@/services/simpleSyncService';
+import { wordSyncService } from '@/services/wordSyncService';
+import { useReciterStore, popularReciters } from '@/stores/reciterStore';
+import { quranApi } from '@/services/api';
 
 interface SettingItem {
   id: string;
@@ -24,6 +26,9 @@ interface SettingItem {
 }
 
 export default function SettingsScreen() {
+  const { getSelectedReciter, setSelectedReciter } = useReciterStore();
+  const selectedReciter = getSelectedReciter();
+
   const [settings, setSettings] = useState<{[key: string]: boolean | string}>({
     notifications: true,
     autoPlay: true,
@@ -31,7 +36,6 @@ export default function SettingsScreen() {
     downloadOverWifi: true,
     arabicFont: 'Uthmani',
     translationLanguage: 'Français',
-    reciter: 'Mishary Al-Afasy',
     playbackSpeed: '1.0x',
   });
 
@@ -40,6 +44,29 @@ export default function SettingsScreen() {
       ...prev,
       [key]: value
     }));
+  };
+
+  const showReciterSelection = () => {
+    const options = popularReciters.map(reciter => ({
+      text: `${reciter.name} (${reciter.country})`,
+      onPress: () => {
+        setSelectedReciter(reciter);
+        Alert.alert(
+          'Récitateur sélectionné',
+          `${reciter.name} est maintenant votre récitateur par défaut.`
+        );
+      },
+      style: reciter.id === selectedReciter.id ? 'default' : 'cancel' as any
+    }));
+
+    Alert.alert(
+      'Choisir un récitateur',
+      'Sélectionnez votre récitateur préféré:',
+      [
+        ...options,
+        { text: 'Annuler', style: 'cancel' }
+      ]
+    );
   };
 
   const settingsData: SettingItem[] = [
@@ -96,11 +123,9 @@ export default function SettingsScreen() {
     {
       id: 'reciter',
       title: 'Récitateur par défaut',
-      subtitle: 'Voix principale pour l\'audio',
-      type: 'option',
+      subtitle: `Actuellement: ${selectedReciter.name}`,
+      type: 'action',
       icon: 'person',
-      value: settings.reciter,
-      options: ['Mishary Al-Afasy', 'Abdul Rahman Al-Sudais', 'Saad Al-Ghamidi', 'Ahmed Al-Ajmi'],
     },
     {
       id: 'playbackSpeed',
@@ -186,7 +211,6 @@ export default function SettingsScreen() {
               try {
                 console.log('Démarrage de la réparation d\'urgence...');
                 await quranApi.forceClearCache();
-                simpleSyncService.clearCache();
                 wordSyncService.clearCache();
                 Alert.alert('Réparation terminée', 'Toutes les données ont été nettoyées. Redémarrez l\'application.');
               } catch (error) {
@@ -277,6 +301,19 @@ export default function SettingsScreen() {
             }}
           >
             <Text style={styles.optionText}>{item.value}</Text>
+            <Ionicons name="chevron-forward" size={16} color="#666" />
+          </TouchableOpacity>
+        )}
+
+        {item.type === 'action' && (
+          <TouchableOpacity
+            style={styles.optionButton}
+            onPress={() => {
+              if (item.id === 'reciter') {
+                showReciterSelection();
+              }
+            }}
+          >
             <Ionicons name="chevron-forward" size={16} color="#666" />
           </TouchableOpacity>
         )}

@@ -38,31 +38,7 @@ export const TafsirAudioPlayer: React.FC<TafsirAudioPlayerProps> = ({
   const [isBuffering, setIsBuffering] = useState(false);
   const positionUpdateRef = useRef<NodeJS.Timeout>();
 
-  // Générer l'URL audio pour le tafsir
-  const generateAudioUrl = () => {
-    // URLs de test fonctionnelles - remplacez par vos vraies URLs
-    const testUrls = [
-      'https://commondatastorage.googleapis.com/codeskulptor-demos/DDR_assets/Kangaroo_MusiQue_-_The_Neverwritten_Role_Playing_Game.mp3',
-      'https://commondatastorage.googleapis.com/codeskulptor-assets/Epoq-Lepidoptera.ogg',
-      'https://sample-videos.com/zip/10/mp3/mp3-sample-1.mp3'
-    ];
-
-    const baseUrls = {
-      'hady-niasse': testUrls[0],
-      'moustapha-gueye': testUrls[1],
-      'ahmadou-bamba': testUrls[2],
-    };
-
-    const testUrl = baseUrls[tafsirBook.apiId as keyof typeof baseUrls];
-    if (testUrl) {
-      return testUrl;
-    }
-
-    // Fallback vers une URL de test générique
-    return testUrls[0];
-  };
-
-  const audioUrl = content?.audioUrl || generateAudioUrl();
+  const audioUrl = content?.audioUrl;
 
   useEffect(() => {
     return () => {

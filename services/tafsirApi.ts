@@ -111,28 +111,7 @@ class TafsirApiService {
       return contentGenerator(surahId, verseId);
     }
 
-    // Cas spécial pour Cheikh Ahmadou Bamba
-    if (bookId === 8) {
-      return this.getAhmadouBambaTafsir(surahId, verseId);
-    }
-
     return null;
-  }
-
-  // Ajouter un tafsir pour Cheikh Ahmadou Bamba
-  private getAhmadouBambaTafsir(surahId: number, verseId: number): TafsirContent {
-    return {
-      id: parseInt(`8${surahId}${verseId}`),
-      bookId: 8,
-      surahId,
-      verseId,
-      content: `Tafsir bu Cheikh Ahmadou Bamba ci sourate ${surahId}, verset ${verseId}: Boole ayah bi dafay jar ak hikma yu Yalla defar seen khalq yi. Cheikh Ahmadou Bamba dafay jaay nun ni Islam dafay am ja ci biir tasawwuf ak tawheed. Mu dafay wax ni verset bii dafay jaay nun bañ toppat Allah ñaay ñu, bañ def seen kàddu.
-
-      Ci biir tariqat Mouride, ayah bii dafay jaay nun ni khidma ak seen Borom moo nekk seen njuumaante yu wëy. Dooleel gii ci Alquraan bi, dafay jar seen yakar ci biir seen dém.`,
-      reference: 'Archives Mourides - Touba',
-      audioUrl: 'https://commondatastorage.googleapis.com/codeskulptor-assets/Epoq-Lepidoptera.ogg',
-      audioDuration: 300
-    };
   }
 
   // Méthode pour rechercher dans les tafsirs
@@ -165,7 +144,7 @@ class TafsirApiService {
   // Méthode pour obtenir la liste des versets disponibles pour un tafsir audio
   async getAvailableAudioVerses(bookId: number, surahId: number): Promise<number[]> {
     // Pour les tafsirs wolof, on simule la disponibilité de tous les versets
-    if (bookId >= 6 && bookId <= 8) {
+    if (bookId >= 6 && bookId <= 7) {
       // Retourner une liste d'exemple de versets disponibles
       return Array.from({ length: 20 }, (_, i) => i + 1); // Versets 1-20 disponibles
     }
@@ -174,7 +153,7 @@ class TafsirApiService {
 
   // Vérifier si un tafsir a du contenu audio
   isAudioTafsir(bookId: number): boolean {
-    return bookId >= 6 && bookId <= 8; // Tafsirs wolof ont l'audio
+    return bookId >= 6 && bookId <= 7; // Tafsirs wolof ont l'audio
   }
 }
 

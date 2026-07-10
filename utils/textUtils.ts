@@ -3,6 +3,32 @@
  */
 
 /**
+ * Convertit les entités HTML hexadécimales en caractères arabes réels
+ * @param text - Texte contenant des entités HTML comme &#xfb51;
+ * @returns Texte avec les caractères arabes convertis
+ */
+export function convertHtmlEntitiesToArabic(text: string): string {
+  if (!text) return '';
+
+  try {
+    // Convertir les entités HTML hexadécimales &#xXXXX; en caractères réels
+    const converted = text.replace(/&#x([\dA-Fa-f]+);/g, function(match, grp) {
+      return String.fromCharCode(parseInt(grp, 16));
+    });
+
+    // Debug: log conversion if it happened
+    if (converted !== text) {
+      console.log(`🔄 HTML entity converted: "${text}" -> "${converted}"`);
+    }
+
+    return converted;
+  } catch (error) {
+    console.error('Erreur lors de la conversion HTML entities:', error);
+    return text;
+  }
+}
+
+/**
  * Convertit les séquences unicode en caractères arabes réels
  * @param text - Texte contenant des séquences unicode
  * @returns Texte avec les caractères arabes convertis
@@ -87,13 +113,16 @@ export function repairArabicText(text: string): string {
 
   let repaired = text;
 
-  // Étape 1: Convertir les séquences unicode valides
+  // Étape 1: Convertir les entités HTML hexadécimales (&#xfb51;)
+  repaired = convertHtmlEntitiesToArabic(repaired);
+
+  // Étape 2: Convertir les séquences unicode valides (\uXXXX)
   repaired = convertUnicodeToArabic(repaired);
 
-  // Étape 2: Supprimer les séquences unicode malformées
+  // Étape 3: Supprimer les séquences unicode malformées
   repaired = repaired.replace(/\\u[\dA-Fa-f]{0,3}(?![0-9A-Fa-f])/g, '');
 
-  // Étape 3: Nettoyer le texte
+  // Étape 4: Nettoyer le texte
   repaired = cleanArabicText(repaired);
 
   return repaired;

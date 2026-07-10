@@ -6,6 +6,7 @@ import {
   StyleSheet,
   Animated,
   Alert,
+  ScrollView,
 } from 'react-native';
 import { useAudioPlayer, AudioSource, setAudioModeAsync } from 'expo-audio';
 import Slider from '@react-native-community/slider';
@@ -15,11 +16,8 @@ import { useReciterStore } from '@/stores/reciterStore';
 import { useAudioNotifications } from '@/hooks/useAudioNotifications';
 import { UthmaniText } from './UthmaniText';
 import { quranApi } from '@/services/api';
-import { simpleSyncService, SimpleTimingData } from '@/services/simpleSyncService';
-import { adaptiveSyncService } from '@/services/adaptiveSyncService';
-import { precisionSyncService, PrecisionWordTiming } from '@/services/precisionSyncService';
+import { enhancedSyncService, EnhancedWordTiming } from '@/services/enhancedSyncService';
 import { repairArabicText } from '@/utils/textUtils';
-import { TajweedService } from '@/services/tajweedService';
 
 interface AudioPlayerProps {
   verses: Verse[];
@@ -52,24 +50,34 @@ export const AudioPlayerSimple: React.FC<AudioPlayerProps> = ({
   const [surahInfo, setSurahInfo] = useState<Surah | null>(null);
   const [hasFinishedAudio, setHasFinishedAudio] = useState(false);
 
-  // États pour highlight mot par mot avec TAJWEED
+  // États pour highlight mot par mot avec Enhanced Laravel API
   const [currentWordIndex, setCurrentWordIndex] = useState(-1);
-  const [words, setWords] = useState<string[]>([]);
-  const [timingData, setTimingData] = useState<SimpleTimingData | null>(null);
-  const [tajweedWords, setTajweedWords] = useState<Array<{
-    text: string;
-    startTime: number;
-    endTime: number;
-    tajweedRules: string[];
-    color?: string;
-  }>>([]);
-  const [adaptiveSyncData, setAdaptiveSyncData] = useState<any>(null);
-  const [useAdaptiveSync, setUseAdaptiveSync] = useState(false);
-  const [usePrecisionSync, setUsePrecisionSync] = useState(false);
-  const [precisionWords, setPrecisionWords] = useState<PrecisionWordTiming[]>([]);
+  const [enhancedWordTimings, setEnhancedWordTimings] = useState<EnhancedWordTiming[]>([]);
+  const [currentTimingVerseId, setCurrentTimingVerseId] = useState<number | null>(null);
+  const [isLoadingWords, setIsLoadingWords] = useState(false);
+  const [wordError, setWordError] = useState<string | null>(null);
 
   const slideAnim = useRef(new Animated.Value(300)).current;
   const highlightAnim = useRef(new Animated.Value(0)).current;
+
+  // Ref miroir de currentWordIndex : la boucle de polling (setInterval) capture
+  // une fermeture qui ne voit jamais les mises à jour de state entre deux
+  // recréations de l'effet (dépendances [player.playing, currentVerseIndex, ...]
+  // qui n'incluent pas currentWordIndex) — sans ce ref, la comparaison
+  // "newWordIndex > currentWordIndex" reste figée à sa valeur initiale (-1)
+  // pendant toute la durée du verset, ce qui décale le surlignage par rapport à l'audio.
+  const currentWordIndexRef = useRef(-1);
+  // Même problème pour enhancedWordTimings/currentTimingVerseId : sans ces refs,
+  // la boucle de polling ne "voit" jamais les timings chargés après le début de
+  // la lecture (d'où le surlignage qui ne démarre qu'après une pause/reprise,
+  // qui recrée l'effet et capture alors l'état à jour).
+  const enhancedWordTimingsRef = useRef<EnhancedWordTiming[]>([]);
+  const currentTimingVerseIdRef = useRef<number | null>(null);
+  // Empêche de redéclencher le chargement des timings plusieurs fois pour le même verset
+  const timingsFetchTriggeredRef = useRef<number | null>(null);
+  // Scroll automatique vers le mot en cours dans la liste des mots du verset
+  const wordsScrollViewRef = useRef<ScrollView>(null);
+  const wordLayoutsRef = useRef<{ [index: number]: { y: number; height: number } }>({});
 
   const currentVerse = verses[currentVerseIndex];
   const selectedReciter = getSelectedReciter();
@@ -94,9 +102,21 @@ export const AudioPlayerSimple: React.FC<AudioPlayerProps> = ({
   // Cleanup au démontage
   useEffect(() => {
     return () => {
-      simpleSyncService.clearCache();
+      enhancedSyncService.reset();
     };
   }, []);
+
+  // Scroll automatique vers le mot en cours de lecture dans la liste des mots
+  useEffect(() => {
+    if (currentWordIndex < 0) return;
+
+    const layout = wordLayoutsRef.current[currentWordIndex];
+    if (!layout) return;
+
+    // Centrer approximativement le mot dans la zone visible du ScrollView
+    const targetY = Math.max(0, layout.y - (styles.wordsScrollView.maxHeight / 2) + layout.height / 2);
+    wordsScrollViewRef.current?.scrollTo({ y: targetY, animated: true });
+  }, [currentWordIndex]);
 
   // Charger l'audio quand le verset change
   useEffect(() => {
@@ -104,46 +124,97 @@ export const AudioPlayerSimple: React.FC<AudioPlayerProps> = ({
       setHasFinishedAudio(false); // Reset flag when changing verse
       loadAudio();
       loadSurahInfo();
-      prepareWordHighlighting();
+      prepareWordSynchronization();
     }
   }, [currentVerseIndex, verses]);
 
-  // Préparer le highlight mot par mot SIMPLIFIÉ
-  const prepareWordHighlighting = () => {
+  // Préparer la synchronisation mot par mot avec Enhanced Laravel API
+  const prepareWordSynchronization = async () => {
     const currentVerse = verses[currentVerseIndex];
     if (!currentVerse) {
-      setWords([]);
-      setTimingData(null);
+      setEnhancedWordTimings([]);
+      enhancedWordTimingsRef.current = [];
       setCurrentWordIndex(-1);
+      currentWordIndexRef.current = -1;
+      setCurrentTimingVerseId(null);
+      currentTimingVerseIdRef.current = null;
+      setWordError(null);
       return;
     }
 
-    console.log('🔧 SIMPLE AUDIO: Preparing words for verse', currentVerse.verse_number);
+    console.log('🔧 LARAVEL ENHANCED: Preparing word sync for verse', currentVerse.verse_number);
 
-    const arabicText = currentVerse.text_arabic;
-    if (!arabicText) {
-      console.log('❌ No Arabic text found');
-      setWords([]);
-      setTimingData(null);
-      return;
-    }
-
-    // Réparer le texte arabe et extraction simple des mots
-    const repairedText = repairArabicText(arabicText);
-    const cleanText = repairedText.trim().replace(/\s{2,}/g, ' ');
-    const wordArray = cleanText.split(' ').filter(word => word.trim().length > 0);
-
-    console.log(`📝 TAJWEED AUDIO: Extracted ${wordArray.length} words`);
-    setWords(wordArray);
+    // Reset pour nouveau verset
     setCurrentWordIndex(-1);
-    setTimingData(null);
-    setTajweedWords([]);
+    currentWordIndexRef.current = -1;
+    timingsFetchTriggeredRef.current = null;
+    wordLayoutsRef.current = {};
+    setEnhancedWordTimings([]);
+    enhancedWordTimingsRef.current = [];
+    setCurrentTimingVerseId(null);
+    currentTimingVerseIdRef.current = null;
+    setWordError(null);
     setHasFinishedAudio(false);
 
-    // Reset des services
-    simpleSyncService.resetForNewVerse();
-    adaptiveSyncService.reset();
-    precisionSyncService.reset();
+    // Remonter la liste des mots en haut pour le nouveau verset
+    wordsScrollViewRef.current?.scrollTo({ y: 0, animated: false });
+
+    // Reset du service Enhanced
+    enhancedSyncService.reset();
+  };
+
+  // Charger les données de timing Enhanced depuis l'API Laravel
+  const loadEnhancedWordTimings = async (verse: Verse, audioDuration: number) => {
+    try {
+      setIsLoadingWords(true);
+      setWordError(null);
+
+      console.log(`🌐 LARAVEL ENHANCED: Loading word timings for verse ${verse.global_number}`);
+
+      const selectedReciter = getSelectedReciter();
+
+      // Extraire les mots depuis le texte arabe du verset (fallback si pas de données package)
+      const arabicText = repairArabicText(verse.text_arabic);
+      const wordArray = arabicText.trim().split(' ').filter(word => word.trim().length > 0);
+
+      const packageWords = wordArray.map((word, index) => ({
+        id: index + 1, // ID temporaire basé sur la position
+        text: word,
+        position: index + 1,
+        char_type_name: 'word', // Type par défaut
+        translation: {
+          text: '' // Traduction vide pour l'instant
+        },
+        transliteration: {
+          text: '' // Translittération vide pour l'instant
+        }
+      }));
+
+      // Utiliser l'Enhanced Service pour récupérer les timings précis
+      const timings = await enhancedSyncService.getEnhancedTimingData(
+        verse.global_number,
+        selectedReciter.audioApiId,
+        packageWords,
+        Math.round(audioDuration) // Convert float to integer for Laravel validation
+      );
+
+      if (timings && timings.length > 0) {
+        setEnhancedWordTimings(timings);
+        enhancedWordTimingsRef.current = timings;
+        setCurrentTimingVerseId(verse.global_number);
+        currentTimingVerseIdRef.current = verse.global_number;
+        console.log(`✅ LARAVEL ENHANCED: Loaded ${timings.length} word timings`);
+      } else {
+        setWordError('Aucune donnée de timing trouvée');
+        console.warn('❌ LARAVEL ENHANCED: No timing data received');
+      }
+
+    } catch (error) {
+      console.error('❌ LARAVEL ENHANCED: Error loading word timings:', error);
+      setWordError(`Erreur: ${error.message}`);
+    } finally {
+      setIsLoadingWords(false);
+    }
   };
 
   // Charger les informations de sourate
@@ -240,6 +311,11 @@ export const AudioPlayerSimple: React.FC<AudioPlayerProps> = ({
 
         // Highlight du verset
         onVerseHighlight(verse.id);
+
+        // Le chargement des timings est déclenché par la boucle de polling
+        // dès que player.duration est disponible (voir useEffect plus bas) :
+        // pas besoin d'attendre ici, ça évite un délai fixe qui désynchronise
+        // le surlignage par rapport à l'audio déjà en train de jouer.
       } else {
         setIsLoading(false);
         setIsBuffering(false);
@@ -264,17 +340,60 @@ export const AudioPlayerSimple: React.FC<AudioPlayerProps> = ({
         setDuration(currentDur);
         setIsPlaying(player.playing);
 
-        // HIGHLIGHTING BASIQUE - juste basé sur le temps
-        if (currentDur > 0 && words.length > 0) {
-          const timePerWord = currentDur / words.length;
-          const expectedWordIndex = Math.min(
-            Math.floor(currentPos / timePerWord),
-            words.length - 1
-          );
+        // Déclencher le chargement des timings dès que la durée réelle de l'audio
+        // est connue, plutôt que d'attendre un délai fixe : évite que le verset
+        // ait déjà bien avancé avant que le surlignage ne démarre.
+        if (
+          currentDur > 0 &&
+          currentVerse &&
+          timingsFetchTriggeredRef.current !== currentVerse.global_number
+        ) {
+          timingsFetchTriggeredRef.current = currentVerse.global_number;
+          loadEnhancedWordTimings(currentVerse, currentDur);
+        }
 
-          if (expectedWordIndex !== currentWordIndex && expectedWordIndex >= 0) {
-            setCurrentWordIndex(expectedWordIndex);
-          }
+        // HIGHLIGHTING avec Enhanced Laravel API
+        // On utilise les refs (toujours à jour) et non les states directement :
+        // cet effet n'est pas recréé quand enhancedWordTimings/currentTimingVerseId
+        // changent (pas dans le tableau de dépendances), donc les states capturés
+        // dans cette fermeture resteraient figés à leur valeur du début de lecture.
+        if (
+          currentDur > 0 &&
+          enhancedWordTimingsRef.current.length > 0 &&
+          currentTimingVerseIdRef.current === currentVerse.global_number
+        ) {
+
+          // Utiliser le service Enhanced Laravel pour trouver le mot actuel
+          const selectedReciter = getSelectedReciter();
+
+          // Utiliser une fonction async non-bloquante
+          enhancedSyncService.getCurrentWord(
+            currentVerse.global_number,
+            selectedReciter.audioApiId,
+            currentPos,
+            [], // packageWords - sera géré côté backend
+            Math.round(currentDur) // Convert float to integer for Laravel validation
+          ).then(result => {
+            // PROGRESSION MONOTONE: Avancer seulement, jamais reculer (comme QuranWBW.com)
+            // On compare contre currentWordIndexRef (toujours à jour) et non contre
+            // currentWordIndex (figé dans la fermeture de cet effet)
+            const newWordIndex = result.currentWordIndex;
+
+            if (newWordIndex >= 0 && newWordIndex !== currentWordIndexRef.current) {
+              // Logging occasionnel pour éviter le spam
+              if (Math.random() < 0.1) {
+                console.log(`🎯 LARAVEL ENHANCED: → Word ${newWordIndex + 1}/${result.totalWords} at ${currentPos.toFixed(0)}ms`);
+                if (result.currentWord) {
+                  console.log(`   Word: "${result.currentWord.arabic_text}" [${(result.currentWord.confidence * 100).toFixed(0)}% conf]`);
+                }
+              }
+              currentWordIndexRef.current = newWordIndex;
+              setCurrentWordIndex(newWordIndex);
+            }
+          }).catch(error => {
+            // Fallback simple si l'API échoue
+            console.warn('Enhanced API failed, using simple timing:', error);
+          });
         }
 
         // Gérer la fin de lecture (une seule fois par verset)
@@ -287,60 +406,13 @@ export const AudioPlayerSimple: React.FC<AudioPlayerProps> = ({
           }, 500);
         }
       }
-    }, 16); // 60 FPS pour fluidité maximale
+    }, 100); // 10 FPS comme timing optimal pour apprentissage
 
     return () => {
       clearInterval(interval);
     };
-  }, [player.playing, words.length, currentVerseIndex, verses.length, autoPlay]);
+  }, [player.playing, currentVerseIndex, verses.length, autoPlay]); // Supprimé quranComWords.length pour éviter la régénération
 
-  // Générer les données de timing TAJWEED respectant les règles de récitation
-  const generateTajweedTiming = (audioDuration: number) => {
-    if (!currentVerse || words.length === 0 || timingData) {
-      console.log('❌ SKIP TAJWEED TIMING GENERATION:', { hasVerse: !!currentVerse, wordsLength: words.length, hasTimingData: !!timingData });
-      return;
-    }
-
-    console.log(`🕌 GENERATING TAJWEED TIMING for ${words.length} words, duration: ${audioDuration}ms`);
-
-    const arabicText = repairArabicText(currentVerse.text_arabic);
-
-    // Obtenir le style du récitateur (Hafiz vs Qari)
-    const reciterStyle = TajweedService.getReciterStyle(selectedReciter.audioApiId);
-    console.log(`🎭 Reciter Style: ${reciterStyle.name} (${reciterStyle.category}) - Tajweed Emphasis: ${reciterStyle.tajweedEmphasis}`);
-
-    // Générer le timing avec respect du Tajweed
-    const tajweedTimingWords = TajweedService.generateTajweedTiming(
-      arabicText,
-      audioDuration,
-      selectedReciter.audioApiId
-    );
-
-    // Convertir au format SimpleTimingData pour compatibilité
-    const simpleTimingData: SimpleTimingData = {
-      verseId: currentVerse.global_number,
-      words: tajweedTimingWords.map((word, index) => ({
-        index,
-        text: word.text,
-        startTime: word.startTime,
-        endTime: word.endTime,
-        duration: word.endTime - word.startTime,
-        weight: 1.0
-      })),
-      totalDuration: audioDuration,
-      averageWordDuration: audioDuration / tajweedTimingWords.length
-    };
-
-    setTimingData(simpleTimingData);
-    setTajweedWords(tajweedTimingWords);
-
-    console.log(`✅ TAJWEED TIMING GENERATED - ${tajweedTimingWords.length} words with Tajweed rules`);
-    tajweedTimingWords.forEach((word, i) => {
-      if (word.tajweedRules.length > 0) {
-        console.log(`🔸 Word ${i + 1}: "${word.text}" - Rules: [${word.tajweedRules.join(', ')}] - Duration: ${(word.endTime - word.startTime).toFixed(0)}ms`);
-      }
-    });
-  };
 
 
   const playPause = () => {
@@ -406,9 +478,6 @@ export const AudioPlayerSimple: React.FC<AudioPlayerProps> = ({
         <View style={styles.reciterInfo}>
           <Text style={styles.reciterName}>{selectedReciter.name}</Text>
           <Text style={styles.reciterNameArabic}>{selectedReciter.nameArabic}</Text>
-          {TajweedService.isHafiz(selectedReciter.audioApiId) && (
-            <Text style={styles.hafizBadge}>حافظ</Text>
-          )}
         </View>
         <View style={styles.verseInfo}>
           <Text style={styles.verseNumber}>
@@ -418,23 +487,23 @@ export const AudioPlayerSimple: React.FC<AudioPlayerProps> = ({
         </View>
       </View>
 
-      {/* Affichage du verset avec highlight SIMPLIFIÉ */}
-      {currentVerse && words.length > 0 ? (
+      {/* Affichage du verset avec highlight ENHANCED LARAVEL */}
+      {currentVerse && enhancedWordTimings.length > 0 ? (
         <View style={styles.verseContainer}>
-          {/* <View style={styles.verseHeader}>
-            <Text style={styles.surahName}>
-              {surahInfo?.name_french || currentVerse.surah?.name_french || `Sourate ${currentVerse.surah_id}`}
-            </Text>
-            <Text style={styles.verseNumberText}>Verset {currentVerse.verse_number}</Text>
-          </View> */}
-
-          <View style={styles.wordsContainer}>
-            {words.map((word, index) => {
+          <ScrollView
+            ref={wordsScrollViewRef}
+            style={styles.wordsScrollView}
+            contentContainerStyle={styles.wordsContainer}
+            showsVerticalScrollIndicator={true}
+          >
+            {enhancedWordTimings.map((wordTiming, index) => {
+              const word = wordTiming.arabic_text;
               const isCurrentWord = index === currentWordIndex;
               const hasPassedWord = index < currentWordIndex;
-              const tajweedWord = tajweedWords[index];
-              const tajweedColor = tajweedWord?.color || '#FFFFFF';
-              const hasTajweedRules = tajweedWord?.tajweedRules?.length > 0;
+
+              const hasTranslation = wordTiming?.translation?.length > 0;
+              const hasTransliteration = wordTiming?.transliteration?.length > 0;
+              const hasTiming = true; // Toujours vrai pour Enhanced
 
               // Debug log for current word
               if (isCurrentWord) {
@@ -445,30 +514,23 @@ export const AudioPlayerSimple: React.FC<AudioPlayerProps> = ({
                 <TouchableOpacity
                   key={`word-${index}`}
                   activeOpacity={0.8}
+                  onLayout={(e) => {
+                    const { y, height } = e.nativeEvent.layout;
+                    wordLayoutsRef.current[index] = { y, height };
+                  }}
                 >
                   <Animated.View
                     style={[
                       styles.wordContainer,
-                      hasTajweedRules && {
-                        borderWidth: 2,
-                        borderColor: tajweedColor,
-                        backgroundColor: `${tajweedColor}15`, // Couleur avec transparence
-                      },
                       isCurrentWord && {
                         backgroundColor: highlightAnim.interpolate({
                           inputRange: [0, 1],
-                          outputRange: [
-                            hasTajweedRules ? `${tajweedColor}60` : 'rgba(212, 175, 55, 0.9)',
-                            hasTajweedRules ? `${tajweedColor}FF` : 'rgba(255, 193, 7, 1)'
-                          ],
+                          outputRange: ['rgba(212, 175, 55, 0.9)', 'rgba(255, 193, 7, 1)'],
                         }),
                         borderWidth: 3,
                         borderColor: highlightAnim.interpolate({
                           inputRange: [0, 1],
-                          outputRange: [
-                            hasTajweedRules ? tajweedColor : '#D4AF37',
-                            hasTajweedRules ? tajweedColor : '#FFC107'
-                          ],
+                          outputRange: ['#D4AF37', '#FFC107'],
                         }),
                         transform: [{
                           scale: highlightAnim.interpolate({
@@ -477,7 +539,7 @@ export const AudioPlayerSimple: React.FC<AudioPlayerProps> = ({
                           }),
                         }],
                         elevation: 8,
-                        shadowColor: isCurrentWord ? '#FFC107' : 'transparent',
+                        shadowColor: '#FFC107',
                         shadowOffset: { width: 0, height: 2 },
                         shadowOpacity: 0.8,
                         shadowRadius: 4,
@@ -490,26 +552,32 @@ export const AudioPlayerSimple: React.FC<AudioPlayerProps> = ({
                         styles.wordText,
                         isCurrentWord && styles.currentWordText,
                         hasPassedWord && styles.passedWordText,
-                        hasTajweedRules && {
-                          color: isCurrentWord ? '#1B5E20' : tajweedColor,
-                          fontWeight: 'bold',
-                        }
                       ]}
                     >
                       {word}
                     </Text>
+
+                    {/* Affichage de la translittération si disponible */}
+                    {hasTransliteration && (
+                      <Text style={[
+                        styles.transliterationText,
+                        isCurrentWord && styles.currentTransliterationText
+                      ]}>
+                        {wordTiming.transliteration}
+                      </Text>
+                    )}
                   </Animated.View>
                 </TouchableOpacity>
               );
             })}
-          </View>
+          </ScrollView>
 
           {/* Barre de progression basique */}
-          {currentWordIndex >= 0 && words.length > 0 && (
+          {currentWordIndex >= 0 && enhancedWordTimings.length > 0 && (
             <View style={styles.progressIndicator}>
               <View style={[
                 styles.progressBar,
-                { width: `${((currentWordIndex + 1) / words.length) * 100}%` }
+                { width: `${((currentWordIndex + 1) / enhancedWordTimings.length) * 100}%` }
               ]} />
             </View>
           )}
@@ -581,6 +649,7 @@ export const AudioPlayerSimple: React.FC<AudioPlayerProps> = ({
             <Text style={[styles.optionText, autoPlay && styles.activeOptionText]}>Auto</Text>
           </TouchableOpacity>
 
+
           <TouchableOpacity
             onPress={() => {
               const speeds = [0.5, 0.75, 1.0, 1.25, 1.5];
@@ -601,7 +670,7 @@ export const AudioPlayerSimple: React.FC<AudioPlayerProps> = ({
           <TouchableOpacity
             onPress={() => {
               resetStore();
-              simpleSyncService.clearCache();
+              enhancedSyncService.clearCache();
               Alert.alert('Reset', 'Cache vidé et store réinitialisé.');
             }}
             style={[styles.optionButton, { backgroundColor: '#E91E63' }]}
@@ -679,6 +748,10 @@ const styles = StyleSheet.create({
     padding: 16,
     marginBottom: 16,
     maxHeight: '60%',
+    overflow: 'hidden',
+  },
+  wordsScrollView: {
+    maxHeight: 220,
   },
   verseHeader: {
     marginBottom: 16,
@@ -863,5 +936,71 @@ const styles = StyleSheet.create({
     color: '#A5D6A7',
     textAlign: 'center',
     marginTop: 2,
+  },
+  // Styles pour le mode amélioré avec package @kmaslesa
+  enhancedModeIndicator: {
+    flexDirection: 'column',
+    alignItems: 'center',
+    marginBottom: 12,
+    padding: 8,
+    backgroundColor: 'rgba(76, 175, 80, 0.1)',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(76, 175, 80, 0.3)',
+  },
+  enhancedModeText: {
+    fontSize: 12,
+    color: '#4CAF50',
+    fontWeight: '600',
+    marginLeft: 6,
+  },
+  enhancedInfoText: {
+    fontSize: 10,
+    color: '#81C784',
+    marginTop: 2,
+    textAlign: 'center',
+  },
+  transliterationText: {
+    fontSize: 9,
+    color: '#A5D6A7',
+    textAlign: 'center',
+    marginTop: 2,
+    fontStyle: 'italic',
+  },
+  currentTransliterationText: {
+    color: '#2E7D32',
+    fontWeight: '600',
+  },
+  enhancedTranslationText: {
+    fontSize: 8,
+    color: '#81C784',
+    textAlign: 'center',
+    marginTop: 1,
+    maxWidth: 60,
+  },
+  currentEnhancedTranslationText: {
+    color: '#1B5E20',
+    fontWeight: '600',
+  },
+  timingIndicator: {
+    position: 'absolute',
+    top: 2,
+    right: 2,
+  },
+  specialTypeIndicator: {
+    position: 'absolute',
+    top: 2,
+    left: 2,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#FF9800',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  specialTypeText: {
+    fontSize: 8,
+    color: '#FFFFFF',
+    fontWeight: 'bold',
   },
 });

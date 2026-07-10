@@ -29,15 +29,15 @@ export default function TabLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Coran',
-          tabBarIcon: ({ color }) => <Ionicons name="book" size={24} color={color} />,
+          title: 'Home',
+          tabBarIcon: ({ color }) => <Ionicons name="home" size={24} color={color} />,
         }}
       />
       <Tabs.Screen
         name="explore"
         options={{
-          title: 'Explorer',
-          tabBarIcon: ({ color }) => <Ionicons name="search" size={24} color={color} />,
+          title: 'Quran',
+          tabBarIcon: ({ color }) => <Ionicons name="book" size={24} color={color} />,
         }}
       />
       <Tabs.Screen

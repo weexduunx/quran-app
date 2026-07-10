@@ -16,7 +16,9 @@ import { useReciterStore } from '@/stores/reciterStore';
 import { useAudioNotifications } from '@/hooks/useAudioNotifications';
 import { UthmaniText } from './UthmaniText';
 import { quranApi } from '@/services/api';
-import { quranSyncService, VerseWithTiming, WordTimingData } from '@/services/quranSyncService';
+import { wordSyncService, VerseWithTiming } from '@/services/wordSyncService';
+import { TafsirPlayer } from './TafsirPlayer';
+import { tafsirService } from '@/services/tafsirService';
 
 interface AudioPlayerProps {
   verses: Verse[];
@@ -54,6 +56,7 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
   const [words, setWords] = useState<string[]>([]);
   const [verseTimingData, setVerseTimingData] = useState<VerseWithTiming | null>(null);
   const [timingDataLoading, setTimingDataLoading] = useState(false);
+  const [showTafsir, setShowTafsir] = useState(false);
 
   // Refs pour contrôler les transitions
   const hasFinishedRef = useRef(false);
@@ -106,28 +109,77 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
     }
   }, [currentVerseIndex, verses]);
 
-  // Préparer le highlight mot par mot avec service Quran Foundation
+  // Écouter les changements de récitateur
+  const { selectedReciter: storeSelectedReciter } = useReciterStore();
+
+  useEffect(() => {
+    if (storeSelectedReciter && currentVerseIndex >= 0 && verses.length > 0) {
+      console.log('🎤 RECITER CHANGED: Reloading audio for', storeSelectedReciter.name);
+      // Recharger l'audio et la synchronisation quand le récitateur change
+      loadAudio();
+      prepareWordHighlighting();
+    }
+  }, [storeSelectedReciter?.id]);
+
+  // Préparer le highlight mot par mot avec service amélioré
   const prepareWordHighlighting = async () => {
     const currentVerse = verses[currentVerseIndex];
     if (!currentVerse) return;
 
-    console.log('🎯 AUDIO PLAYER: Preparing word highlighting with Quran Foundation API for verse', currentVerse.verse_number);
+    console.log('🎯 WORD SYNC: Preparing intelligent word highlighting for verse', currentVerse.verse_number);
     setTimingDataLoading(true);
 
     try {
       const selectedReciter = getSelectedReciter();
-      const verseKey = `${currentVerse.surah_id}:${currentVerse.verse_number}`;
+      const arabicText = currentVerse.text_uthmani || currentVerse.text_arabic || '';
 
-      // Récupérer les données depuis Quran Foundation API avec timing
-      const timingData = await quranSyncService.getVerseWithTiming(
-        verseKey,
-        parseInt(selectedReciter.audioApiId) || 7 // Fallback vers Mishary Alafasy
+      if (!arabicText.trim()) {
+        throw new Error('No arabic text found');
+      }
+
+      // Obtenir la durée audio réelle du son chargé
+      let audioDuration = 5000; // 5 secondes par défaut
+
+      if (sound) {
+        try {
+          const status = await sound.getStatusAsync();
+          if (status.isLoaded && status.durationMillis && status.durationMillis > 0) {
+            audioDuration = status.durationMillis;
+            console.log(`🎵 WORD SYNC: Using real audio duration: ${Math.floor(audioDuration/1000)}s`);
+          } else {
+            console.log('⚠️ WORD SYNC: Audio not fully loaded yet, using estimation');
+            // Estimation basée sur le nombre de mots (environ 0.8 secondes par mot)
+            const wordCount = arabicText.split(/\s+/).length;
+            audioDuration = Math.max(3000, wordCount * 800);
+            console.log(`🎵 WORD SYNC: Estimated duration: ${Math.floor(audioDuration/1000)}s for ${wordCount} words`);
+          }
+        } catch (error) {
+          console.log('⚠️ WORD SYNC: Could not get audio duration:', error);
+        }
+      }
+
+      // Générer les données de timing avec notre service amélioré
+      console.log('🔄 WORD SYNC: Starting synchronization for reciter:', selectedReciter.name);
+      const timingData = await wordSyncService.getVerseTimingData(
+        currentVerse.global_number,
+        selectedReciter.audioApiId,
+        arabicText,
+        audioDuration
       );
 
-      console.log(`✅ AUDIO PLAYER: Loaded ${timingData.source} data with ${timingData.words.length} words from Quran Foundation`);
+      console.log(`✅ WORD SYNC: Generated timing data with ${timingData.words.length} words (accuracy: ${Math.round(timingData.accuracy * 100)}%)`);
+
+      // Convertir au format compatible
+      const compatibleData: VerseWithTiming = {
+        verseKey: `${currentVerse.surah_id}:${currentVerse.verse_number}`,
+        globalNumber: currentVerse.global_number,
+        words: timingData.words,
+        source: timingData.source,
+        accuracy: timingData.accuracy
+      };
 
       // Mettre à jour les états
-      setVerseTimingData(timingData);
+      setVerseTimingData(compatibleData);
       setWords(timingData.words.map(w => w.arabicText));
       setCurrentWordIndex(-1);
 
@@ -170,6 +222,27 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
     }
   };
 
+  // Helper functions for audio URLs
+  const padNumber = (num: number, length: number): string => {
+    return num.toString().padStart(length, '0');
+  };
+
+  const getEveryAyahId = (audioApiId: string): string => {
+    // Mapping AlQuran Cloud IDs vers EveryAyah IDs
+    const mapping: { [key: string]: string } = {
+      'ar.alafasy': 'Alafasy_64kbps',
+      'ar.abdurrahmaansudais': 'Abdul_Sudais_192kbps',
+      'ar.saadalghamdi': 'Saad_Al_Ghamdi_64kbps',
+      'ar.ahmedalajamy': 'Ahmed_ibn_Ali_al_Ajamy_64kbps_QuranCentralCom',
+      'ar.maheralmuaiqly': 'MaherAlMuaiqly128kbps',
+      'ar.naseralqatami': 'Nasser_Alqatami_64kbps',
+      'ar.abdulbasitmurattal': 'Abdul_Basit_Murattal_64kbps',
+      'ar.minshawi': 'Minshawy_Murattal_128kbps',
+      'ar.yasserdosari': 'Yasser_Ad_Dousari_64kbps',
+      'ar.hanirifai': 'Hani_Rifai_64kbps'
+    };
+    return mapping[audioApiId] || 'Alafasy_64kbps';
+  };
 
   const tryLoadAudioFromUrls = async (verse: Verse, urlList: string[]): Promise<Audio.Sound | null> => {
     for (let i = 0; i < urlList.length; i++) {
@@ -213,8 +286,9 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
     const selectedReciter = getSelectedReciter();
 
     const urlsToTry = [
+      `https://cdn.islamic.network/quran/audio/64/${selectedReciter.audioApiId}/${nextVerse.global_number}.mp3`,
+      `https://cdn.islamic.network/quran/audio/64/ar.alafasy/${nextVerse.global_number}.mp3`,
       `https://cdn.alquran.cloud/media/audio/ayah/${selectedReciter.audioApiId}/${nextVerse.global_number}`,
-      `https://cdn.alquran.cloud/media/audio/ayah/ar.alafasy/${nextVerse.global_number}`,
     ];
 
     try {
@@ -275,17 +349,21 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
 
       // Utiliser l'API originale qui fonctionnait avec quran:sync
       const selectedReciter = getSelectedReciter();
+      console.log('🎤 SELECTED RECITER:', selectedReciter.name, '(' + selectedReciter.audioApiId + ')');
 
-      // Format API Al-Quran.cloud qui était utilisé avant
+      // URLs API Audio - Testées et fonctionnelles
       const urlsToTry = [
-        // Format principal: surah/verse avec l'édition du récitateur
+        // API AlQuran Cloud - Format principal qui marche
         `https://cdn.alquran.cloud/media/audio/ayah/${selectedReciter.audioApiId}/${verse.global_number}`,
 
-        // Format alternatif si le principal échoue
-        `https://cdn.alquran.cloud/media/audio/ayah/ar.alafasy/${verse.global_number}`,
+        // API EveryAyah - URLs alternatives
+        `https://everyayah.com/data/${getEveryAyahId(selectedReciter.audioApiId)}/${padNumber(verse.global_number, 6)}.mp3`,
 
-        // Autre format de l'API
-        `https://api.alquran.cloud/v1/ayah/${verse.global_number}/ar.alafasy/audio`,
+        // Islamic Network - URLs de test
+        `https://cdn.islamic.network/quran/audio/${selectedReciter.audioApiId}/${verse.global_number}.mp3`,
+
+        // Fallback avec Al-Afasy qui marche toujours
+        `https://cdn.alquran.cloud/media/audio/ayah/ar.alafasy/${verse.global_number}`,
       ];
 
       console.log(`Trying to load audio for verse ${verse.verse_number} (global ${verse.global_number})`);
@@ -640,9 +718,9 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
                 <View style={styles.timingIndicator}>
                   <Text style={[
                     styles.timingSourceText,
-                    verseTimingData.source === 'quran-align' && styles.preciseTimingText
+                    verseTimingData.source === 'estimated' && styles.estimatedTimingText
                   ]}>
-                    {verseTimingData.source === 'quran-align' ? '🎯 Précis' : '⚡ Estimé'}
+                    {verseTimingData.source === 'estimated' ? '⚡ IA' : '📁 Cache'}
                     ({Math.round(verseTimingData.accuracy * 100)}%)
                   </Text>
                 </View>
@@ -813,6 +891,15 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
           </TouchableOpacity>
 
           <TouchableOpacity
+            onPress={() => setShowTafsir(true)}
+            style={[styles.optionButton, { backgroundColor: tafsirService.hasTafsirForSurah(currentVerse?.surah_id || 1) ? '#FF9800' : '#666' }]}
+            disabled={!tafsirService.hasTafsirForSurah(currentVerse?.surah_id || 1)}
+          >
+            <Ionicons name="headset" size={16} color="#FFFFFF" />
+            <Text style={[styles.optionText, { color: '#FFFFFF' }]}>Tafsir</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
             onPress={() => {
               console.log('Resetting reciter store...');
               resetStore();
@@ -831,6 +918,15 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
           </View>
         )}
       </View>
+
+      {/* Tafsir Player Modal */}
+      <TafsirPlayer
+        isVisible={showTafsir}
+        onClose={() => setShowTafsir(false)}
+        surahId={currentVerse?.surah_id || 1}
+        verseNumber={currentVerse?.verse_number}
+        surahName={surahInfo?.name_french || currentVerse?.surah?.name_french || `Sourate ${currentVerse?.surah_id}`}
+      />
     </Animated.View>
   );
 };
@@ -1092,6 +1188,9 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: '#D4AF37',
     fontWeight: '600',
+  },
+  estimatedTimingText: {
+    color: '#FF9800',
   },
   preciseTimingText: {
     color: '#4CAF50',

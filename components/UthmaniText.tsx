@@ -32,8 +32,8 @@ export const UthmaniText: React.FC<UthmaniTextProps> = ({
     }
   };
 
-  // Utiliser une police système arabique optimisée
-  const fontFamily = 'serif'; // Fallback vers serif qui supporte bien l'arabe
+  // Utiliser la police Scheherazade New qui est installée
+  const fontFamily = 'ScheherazadeNew_400Regular'; // Police installée pour l'arabe
 
   return (
     <Text
@@ -51,10 +51,11 @@ export const UthmaniText: React.FC<UthmaniTextProps> = ({
 
 const styles = StyleSheet.create({
   uthmaniBase: {
-    fontFamily: 'Uthmanic', // Police Uthmanic principale
+    fontFamily: 'ScheherazadeNew_400Regular', // Police Scheherazade New pour l'arabe
     textAlign: 'right',
     fontWeight: '400', // Normal pour les polices arabes
-    letterSpacing: 0.8,
+    letterSpacing: 0.5,
+    writingDirection: 'rtl',
     textShadowColor: 'rgba(212, 175, 55, 0.3)',
     textShadowOffset: { width: 0.5, height: 0.5 },
     textShadowRadius: 2,

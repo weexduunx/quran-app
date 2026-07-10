@@ -138,18 +138,6 @@ export const tafsirBooks: TafsirBook[] = [
     featured: true,
     available: true,
     apiId: 'moustapha-gueye'
-  },
-  {
-    id: 8,
-    title: 'Tafsir Cheikh Ahmadou Bamba',
-    titleArabic: 'تفسير الشيخ أحمدو بامبا',
-    author: 'Cheikh Ahmadou Bamba',
-    authorArabic: 'الشيخ أحمدو بامبا',
-    description: 'Commentaires audio du fondateur du mouridisme sur certains versets du Coran.',
-    language: 'wolof',
-    category: 'classical',
-    available: true,
-    apiId: 'ahmadou-bamba'
   }
 ];
 

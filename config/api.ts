@@ -4,7 +4,7 @@
 
 export const API_CONFIG = {
   BACKEND_URL: __DEV__
-    ? 'http://localhost:8000/api/v1'  // Développement local
+    ? 'http://192.168.1.47:8000/api/v1'  // Développement local
     : 'https://your-production-api.com/api/v1', // Production
 
   // Timeouts
