@@ -1,609 +1,225 @@
-import React, { useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  TextInput,
-  Modal,
-  Alert,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import React, { useMemo, useState } from 'react';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { router } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
-import { useTafsirStore, TafsirBook } from '@/stores/tafsirStore';
-import { TafsirViewer } from '@/components/TafsirViewer';
-import { quranApi } from '@/services/api';
-import { Surah, Verse } from '@/stores/quranStore';
 
-const TOTAL_SURAHS = 114;
+import { tafsirBooks, languageLabel, useTafsirStore, TafsirBook } from '@/stores/tafsirStore';
+import { useProgressStore } from '@/stores/progressStore';
+import { useAppTheme } from '@/hooks/useAppTheme';
+import { ArabicFonts, Radius, Spacing, Type } from '@/constants/theme';
+import { Button, Card, Chip, IconButton, SectionTitle } from '@/components/ui/kit';
+import { surahTransliteration } from '@/utils/surahNames';
 
-const categories = [
-  { id: 'all', name: 'Tous', icon: 'library' },
-  { id: 'classical', name: 'Classiques', icon: 'book' },
-  { id: 'modern', name: 'Modernes', icon: 'newspaper' },
-  { id: 'contemporary', name: 'Contemporains', icon: 'time' },
-  { id: 'favorites', name: 'Favoris', icon: 'heart' },
-  { id: 'wolof', name: 'Wolof', icon: 'earth' },
+type Filter = 'all' | 'arabic' | 'english' | 'favorites';
+
+const FILTERS: { id: Filter; label: string }[] = [
+  { id: 'all', label: 'Tous' },
+  { id: 'arabic', label: 'Arabe' },
+  { id: 'english', label: 'Anglais' },
+  { id: 'favorites', label: 'Favoris' },
 ];
 
 export default function TafsirScreen() {
-  const [selectedCategory, setSelectedCategory] = useState('all');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [showTafsirViewer, setShowTafsirViewer] = useState(false);
-  const [selectedSurah, setSelectedSurah] = useState(1);
-  const [selectedVerse, setSelectedVerse] = useState(1);
-  const [selectedVerseObj, setSelectedVerseObj] = useState<Verse | null>(null);
-  const [surahs, setSurahs] = useState<Surah[]>([]);
+  const { colors } = useAppTheme();
+  const insets = useSafeAreaInsets();
+  const lastRead = useProgressStore((s) => s.lastRead);
+  const favorites = useTafsirStore((s) => s.favoriteBooks);
+  const toggleFavorite = useTafsirStore((s) => s.toggleFavorite);
+  const preferred = useTafsirStore((s) => s.preferredTextBook);
+  const [filter, setFilter] = useState<Filter>('all');
 
-  // Liste des sourates pour la navigation dans le viewer de tafsir
-  useEffect(() => {
-    quranApi.getSurahs().then(setSurahs).catch((error) => {
-      console.error('Erreur lors du chargement des sourates:', error);
-    });
-  }, []);
-
-  // Récupère le verset réel correspondant à la sourate/verset sélectionnés,
-  // nécessaire pour le lecteur audio du tafsir (sans ça, le bouton "Écouter
-  // le Tafsir en Audio" ne fait rien : TafsirAudioPlayer exige une verse valide)
-  useEffect(() => {
-    if (!showTafsirViewer) return;
-
-    let cancelled = false;
-    quranApi.getVersesBySurah(selectedSurah).then((verses) => {
-      if (cancelled) return;
-      const verse = verses.find((v) => v.verse_number === selectedVerse) || null;
-      setSelectedVerseObj(verse);
-    }).catch((error) => {
-      console.error('Erreur lors du chargement du verset pour le tafsir:', error);
-      setSelectedVerseObj(null);
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [showTafsirViewer, selectedSurah, selectedVerse]);
-
-  const handleNavigateSurah = (direction: 'previous' | 'next') => {
-    setSelectedSurah((current) => {
-      const next = direction === 'next' ? current + 1 : current - 1;
-      return Math.min(TOTAL_SURAHS, Math.max(1, next));
-    });
-    setSelectedVerse(1);
-  };
-
-  const {
-    books,
-    selectedBook,
-    setSelectedBook,
-    isFavorite,
-    addToFavorites,
-    removeFromFavorites,
-  } = useTafsirStore();
-
-  const filteredTafsirs = books.filter(book => {
-    if (!book.available) return false;
-
-    const matchesCategory = selectedCategory === 'all' ||
-                           book.category === selectedCategory ||
-                           (selectedCategory === 'favorites' && isFavorite(book.id)) ||
-                           (selectedCategory === 'wolof' && book.language === 'wolof');
-
-    const matchesSearch = book.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         book.author.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         book.description.toLowerCase().includes(searchQuery.toLowerCase());
-
-    return matchesCategory && matchesSearch;
-  });
-
-  const handleBookPress = (book: TafsirBook) => {
-    setSelectedBook(book);
-    // Pour la démonstration, utilisons la sourate 1 (Al-Fatiha) et le verset 1
-    setSelectedSurah(1);
-    setSelectedVerse(1);
-    setShowTafsirViewer(true);
-  };
-
-  const handleToggleFavorite = (book: TafsirBook) => {
-    if (isFavorite(book.id)) {
-      removeFromFavorites(book.id);
-    } else {
-      addToFavorites(book.id);
-    }
-  };
-
-  const getLanguageIcon = (language: string) => {
-    switch (language) {
-      case 'arabic': return 'language';
-      case 'french': return 'chatbubble';
-      case 'both': return 'globe';
-      default: return 'language';
-    }
-  };
-
-  const getLanguageText = (language: string) => {
-    switch (language) {
-      case 'arabic': return 'Arabe';
-      case 'french': return 'Français';
-      case 'wolof': return 'Wolof';
-      case 'both': return 'Bilingue';
-      default: return 'Arabe';
-    }
-  };
-
-  const renderTafsirCard = (book: TafsirBook) => {
-    const isBookFavorite = isFavorite(book.id);
-
-    return (
-      <TouchableOpacity
-        key={book.id}
-        style={styles.tafsirCard}
-        onPress={() => handleBookPress(book)}
-      >
-        <LinearGradient
-          colors={book.featured ? ['#1B5E20', '#2E7D32'] : ['#FFFFFF', '#F8F6F0']}
-          style={styles.cardGradient}
-        >
-        <View style={styles.cardHeader}>
-          <View style={styles.titleContainer}>
-            <Text style={[
-              styles.bookTitle,
-              book.featured && styles.featuredText
-            ]}>
-              {book.title}
-            </Text>
-            <Text style={[
-              styles.bookTitleArabic,
-              book.featured && styles.featuredArabicText
-            ]}>
-              {book.titleArabic}
-            </Text>
-          </View>
-
-          {book.featured && (
-            <View style={styles.featuredBadge}>
-              <Ionicons name="star" size={12} color="#D4AF37" />
-            </View>
-          )}
-        </View>
-
-        <View style={styles.authorContainer}>
-          <Ionicons
-            name="person"
-            size={14}
-            color={book.featured ? '#A5D6A7' : '#666'}
-          />
-          <Text style={[
-            styles.authorName,
-            book.featured && styles.featuredAuthorText
-          ]}>
-            {book.author}
-          </Text>
-          <Text style={[
-            styles.authorNameArabic,
-            book.featured && styles.featuredAuthorText
-          ]}>
-            ({book.authorArabic})
-          </Text>
-        </View>
-
-        <Text style={[
-          styles.description,
-          book.featured && styles.featuredDescriptionText
-        ]}>
-          {book.description}
-        </Text>
-
-        <View style={styles.cardFooter}>
-          <View style={styles.languageTag}>
-            <Ionicons
-              name={getLanguageIcon(book.language)}
-              size={12}
-              color={book.featured ? '#D4AF37' : '#1B5E20'}
-            />
-            <Text style={[
-              styles.languageText,
-              book.featured && styles.featuredLanguageText
-            ]}>
-              {getLanguageText(book.language)}
-            </Text>
-          </View>
-
-          <View style={styles.cardActions}>
-            <TouchableOpacity
-              style={[
-                styles.readButton,
-                book.featured && styles.featuredReadButton
-              ]}
-              onPress={() => handleBookPress(book)}
-            >
-              <Ionicons
-                name="book-outline"
-                size={16}
-                color={book.featured ? '#1B5E20' : '#FFFFFF'}
-              />
-              <Text style={[
-                styles.readButtonText,
-                book.featured && styles.featuredReadButtonText
-              ]}>
-                Lire
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.favoriteButton}
-              onPress={() => handleToggleFavorite(book)}
-            >
-              <Ionicons
-                name={isBookFavorite ? "heart" : "heart-outline"}
-                size={18}
-                color={isBookFavorite ? "#E91E63" : (book.featured ? '#D4AF37' : '#666')}
-              />
-            </TouchableOpacity>
-          </View>
-        </View>
-      </LinearGradient>
-    </TouchableOpacity>
+  const audioBooks = tafsirBooks.filter((b) => b.kind === 'audio');
+  const textBooks = useMemo(
+    () =>
+      tafsirBooks.filter((b) => {
+        if (b.kind !== 'text') return false;
+        if (filter === 'favorites') return favorites.includes(b.id);
+        if (filter === 'all') return true;
+        return b.language === filter;
+      }),
+    [filter, favorites]
   );
-};
+
+  const surah = lastRead?.surahNumber ?? 1;
+  const verse = lastRead?.verseNumber ?? 1;
+
+  const open = (book: TafsirBook) =>
+    router.push({
+      pathname: '/tafsir/[bookId]',
+      params: { bookId: book.id, surah: String(surah), verse: String(verse) },
+    });
+
+  const preferredBook = tafsirBooks.find((b) => b.id === preferred) ?? textBooks[0];
 
   return (
-    <SafeAreaView style={styles.container}>
-      <LinearGradient
-        colors={['#1B5E20', '#2E7D32', '#1B5E20']}
-        style={styles.header}
-      >
-        <View style={styles.headerContent}>
-          <Ionicons name="library" size={40} color="#D4AF37" />
-          <View style={styles.headerText}>
-            <Text style={styles.headerTitle}>Tafsir du Coran</Text>
-            <Text style={styles.headerSubtitle}>Commentaires et explications</Text>
-          </View>
-        </View>
+    <ScrollView
+      style={{ flex: 1, backgroundColor: colors.background }}
+      contentContainerStyle={{ paddingTop: insets.top + Spacing.xl, paddingBottom: Spacing.xxxl }}
+      showsVerticalScrollIndicator={false}
+    >
+      <View style={styles.pad}>
+        <Text style={[Type.largeTitle, { color: colors.text }]}>Tafsir</Text>
+        <Text style={[Type.body, { color: colors.textMuted }]}>Comprendre le sens de chaque verset</Text>
+      </View>
 
-        <View style={styles.searchContainer}>
-          <Ionicons name="search" size={20} color="#666" />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Rechercher un tafsir ou auteur..."
-            placeholderTextColor="#666"
-            value={searchQuery}
-            onChangeText={setSearchQuery}
+      {/* Reprendre */}
+      {lastRead && preferredBook && (
+        <Card onPress={() => open(preferredBook)} style={{ marginHorizontal: Spacing.xl, marginTop: Spacing.lg }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <View style={[styles.iconCircle, { backgroundColor: colors.primarySoft }]}>
+              <Ionicons name="reader-outline" size={20} color={colors.primary} />
+            </View>
+            <View style={{ flex: 1, marginLeft: Spacing.md }}>
+              <Text style={[Type.caption, { color: colors.primary, fontWeight: '600' }]}>Là où vous en êtes</Text>
+              <Text style={[Type.headline, { color: colors.text }]}>
+                {surahTransliteration(lastRead.surahNumber)} · verset {lastRead.verseNumber}
+              </Text>
+              <Text style={[Type.caption, { color: colors.textMuted }]}>{preferredBook.title}</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={colors.textSubtle} />
+          </View>
+        </Card>
+      )}
+
+      {/* Wolof */}
+      <View style={[styles.pad, styles.mtXl]}>
+        <SectionTitle>En wolof</SectionTitle>
+      </View>
+      {audioBooks.map((wolof) => (
+        <View key={wolof.id} style={[styles.hero, { backgroundColor: colors.primaryStrong }]}>
+          <View style={styles.heroBadge}>
+            <Ionicons name="headset" size={14} color="#0B3D2E" />
+            <Text style={styles.heroBadgeText}>Audio</Text>
+          </View>
+          <Text style={styles.heroArabic}>{wolof.titleArabic}</Text>
+          <Text style={styles.heroTitle}>{wolof.title}</Text>
+          <Text style={styles.heroDesc}>{wolof.description}</Text>
+          <Button
+            title="Écouter"
+            icon="play"
+            onPress={() => open(wolof)}
+            style={{ marginTop: Spacing.lg, alignSelf: 'flex-start', backgroundColor: '#E9D49A' }}
+            textColor="#0B3D2E"
           />
         </View>
-      </LinearGradient>
+      ))}
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={styles.categoriesContainer}
-          contentContainerStyle={styles.categoriesContent}
-        >
-          {categories.map((category) => (
-            <TouchableOpacity
-              key={category.id}
-              style={[
-                styles.categoryButton,
-                selectedCategory === category.id && styles.activeCategoryButton
-              ]}
-              onPress={() => setSelectedCategory(category.id)}
-            >
-              <Ionicons
-                name={category.icon as any}
-                size={16}
-                color={selectedCategory === category.id ? '#FFFFFF' : '#1B5E20'}
-              />
-              <Text style={[
-                styles.categoryButtonText,
-                selectedCategory === category.id && styles.activeCategoryButtonText
-              ]}>
-                {category.name}
-              </Text>
-            </TouchableOpacity>
+      {/* Écrits */}
+      <View style={[styles.pad, styles.mtXl]}>
+        <SectionTitle>Commentaires écrits</SectionTitle>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
+          {FILTERS.map((f) => (
+            <Chip key={f.id} label={f.label} active={filter === f.id} onPress={() => setFilter(f.id)} />
           ))}
         </ScrollView>
+      </View>
 
-        <View style={styles.sectionHeader}>
-          <Ionicons name="book" size={20} color="#D4AF37" />
-          <Text style={styles.sectionTitle}>
-            {selectedCategory === 'all' ? 'Tous les Tafsirs' :
-             categories.find(c => c.id === selectedCategory)?.name + ' Tafsirs'}
-          </Text>
-          <Text style={styles.resultCount}>({filteredTafsirs.length})</Text>
-        </View>
-
-        <View style={styles.tafsirsList}>
-          {filteredTafsirs.map(renderTafsirCard)}
-        </View>
-
-        {filteredTafsirs.length === 0 && (
-          <View style={styles.emptyContainer}>
-            <Ionicons name="book-outline" size={48} color="#ccc" />
-            <Text style={styles.emptyText}>Aucun tafsir trouvé</Text>
-            <Text style={styles.emptySubtext}>
-              Essayez de modifier vos critères de recherche
+      <View style={[styles.list, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+        {textBooks.length === 0 ? (
+          <View style={{ padding: Spacing.xl, alignItems: 'center' }}>
+            <Ionicons name="heart-outline" size={28} color={colors.textSubtle} />
+            <Text style={[Type.callout, { color: colors.textMuted, marginTop: Spacing.sm, textAlign: 'center' }]}>
+              Touchez le cœur d&apos;un tafsir pour le retrouver ici.
             </Text>
           </View>
+        ) : (
+          textBooks.map((b, i) => {
+            const fav = favorites.includes(b.id);
+            return (
+              <View
+                key={b.id}
+                style={[
+                  styles.row,
+                  i < textBooks.length - 1 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
+                ]}
+              >
+                <Card onPress={() => open(b)} style={styles.rowTap}>
+                  <View style={[styles.langTile, { backgroundColor: colors.primarySoft }]}>
+                    <Text style={[Type.caption, { color: colors.primary, fontWeight: '700' }]}>
+                      {b.language === 'arabic' ? 'ع' : 'EN'}
+                    </Text>
+                  </View>
+                  <View style={{ flex: 1, marginLeft: Spacing.md }}>
+                    <Text style={[Type.headline, { color: colors.text }]}>{b.title}</Text>
+                    <Text style={[Type.caption, { color: colors.textMuted }]} numberOfLines={2}>
+                      {b.description}
+                    </Text>
+                    <View style={styles.meta}>
+                      <Text style={[styles.tag, { color: colors.primary, backgroundColor: colors.primarySoft }]}>
+                        {languageLabel[b.language]}
+                      </Text>
+                      {b.level && (
+                        <Text style={[styles.tag, { color: colors.gold, backgroundColor: colors.goldSoft }]}>
+                          {b.level.charAt(0).toUpperCase() + b.level.slice(1)}
+                        </Text>
+                      )}
+                    </View>
+                  </View>
+                </Card>
+                <IconButton
+                  icon={fav ? 'heart' : 'heart-outline'}
+                  color={fav ? colors.gold : colors.textSubtle}
+                  label={fav ? 'Retirer des favoris' : 'Ajouter aux favoris'}
+                  onPress={() => toggleFavorite(b.id)}
+                />
+              </View>
+            );
+          })
         )}
-      </ScrollView>
+      </View>
 
-      {/* Modal pour la lecture du Tafsir : hors du ScrollView, sinon RN peut
-          mal mesurer/positionner son contenu (header qui semble sortir du cadre) */}
-      <Modal
-        animationType="slide"
-        presentationStyle="pageSheet"
-        visible={showTafsirViewer}
-        onRequestClose={() => setShowTafsirViewer(false)}
-      >
-        <TafsirViewer
-          surahId={selectedSurah}
-          verseId={selectedVerse}
-          verse={selectedVerseObj || undefined}
-          surahName={surahs.find((s) => s.number === selectedSurah)?.name_french}
-          canGoPrevious={selectedSurah > 1}
-          canGoNext={selectedSurah < TOTAL_SURAHS}
-          onPreviousSurah={() => handleNavigateSurah('previous')}
-          onNextSurah={() => handleNavigateSurah('next')}
-          selectedBook={selectedBook}
-          onClose={() => setShowTafsirViewer(false)}
-        />
-      </Modal>
-    </SafeAreaView>
+      <Text style={[Type.caption, styles.pad, { color: colors.textSubtle, marginTop: Spacing.lg }]}>
+        Aucun tafsir écrit en français n&apos;est disponible librement pour l&apos;instant : le verset est
+        toujours affiché avec sa traduction française au-dessus du commentaire. Sources : Quran.com et
+        Internet Archive.
+      </Text>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F8F6F0',
-  },
-  header: {
-    paddingHorizontal: 20,
-    paddingVertical: 20,
-    borderBottomLeftRadius: 24,
-    borderBottomRightRadius: 24,
-  },
-  headerContent: {
+  pad: { paddingHorizontal: Spacing.xl },
+  mtLg: { marginTop: Spacing.lg },
+  mtXl: { marginTop: Spacing.xxl },
+  iconCircle: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  hero: { marginHorizontal: Spacing.xl, marginTop: Spacing.md, borderRadius: Radius.xl, padding: Spacing.xl },
+  heroBadge: {
+    position: 'absolute',
+    top: Spacing.lg,
+    right: Spacing.lg,
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 20,
-  },
-  headerText: {
-    marginLeft: 16,
-    flex: 1,
-  },
-  headerTitle: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
-    fontFamily: 'serif',
-  },
-  headerSubtitle: {
-    fontSize: 14,
-    color: '#A5D6A7',
-    marginTop: 4,
-  },
-  searchContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    paddingHorizontal: 16,
+    gap: 4,
+    backgroundColor: '#E9D49A',
+    borderRadius: Radius.pill,
+    paddingHorizontal: 10,
     paddingVertical: 4,
-    marginTop: 8,
   },
-  searchInput: {
-    flex: 1,
-    marginLeft: 12,
-    fontSize: 16,
-    color: '#333',
-    paddingVertical: 8,
-  },
-  content: {
-    flex: 1,
-  },
-  categoriesContainer: {
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  categoriesContent: {
-    paddingHorizontal: 20,
-    paddingRight: 40,
-  },
-  categoryButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    marginRight: 12,
-    borderWidth: 1,
-    borderColor: '#E8DCC0',
-  },
-  activeCategoryButton: {
-    backgroundColor: '#1B5E20',
-    borderColor: '#1B5E20',
-  },
-  categoryButtonText: {
-    fontSize: 14,
-    color: '#1B5E20',
-    marginLeft: 6,
-    fontWeight: '600',
-  },
-  activeCategoryButtonText: {
-    color: '#FFFFFF',
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    marginTop: 16,
-    marginBottom: 16,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#1B5E20',
-    marginLeft: 8,
-    fontFamily: 'serif',
-  },
-  resultCount: {
-    fontSize: 14,
-    color: '#666',
-    marginLeft: 4,
-  },
-  tafsirsList: {
-    paddingHorizontal: 20,
-    paddingBottom: 24,
-  },
-  tafsirCard: {
-    marginBottom: 16,
-    borderRadius: 16,
+  heroBadgeText: { color: '#0B3D2E', fontSize: 12, fontWeight: '700' },
+  heroArabic: { fontFamily: ArabicFonts.regular, fontSize: 24, lineHeight: 42, color: '#E9D49A', marginRight: 80 },
+  heroTitle: { color: '#fff', fontSize: 22, fontWeight: '700', marginTop: 2 },
+  heroDesc: { color: 'rgba(255,255,255,0.78)', fontSize: 15, lineHeight: 21, marginTop: 4 },
+  chips: { gap: Spacing.sm, paddingTop: Spacing.md },
+  list: {
+    marginHorizontal: Spacing.xl,
+    marginTop: Spacing.md,
+    borderRadius: Radius.lg,
+    borderWidth: StyleSheet.hairlineWidth,
     overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 6,
   },
-  cardGradient: {
-    padding: 16,
-    position: 'relative',
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 12,
-  },
-  titleContainer: {
+  row: { flexDirection: 'row', alignItems: 'center', paddingRight: Spacing.sm },
+  rowTap: {
     flex: 1,
-  },
-  bookTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 4,
-  },
-  featuredText: {
-    color: '#FFFFFF',
-  },
-  bookTitleArabic: {
-    fontSize: 18,
-    color: '#666',
-    fontFamily: 'NotoSansArabic-Bold',
-    textAlign: 'right',
-  },
-  featuredArabicText: {
-    color: '#E8F5E8',
-  },
-  featuredBadge: {
-    backgroundColor: 'rgba(212, 175, 55, 0.2)',
-    borderRadius: 12,
-    padding: 6,
-    marginLeft: 8,
-  },
-  authorContainer: {
     flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
+    alignItems: 'flex-start',
+    borderWidth: 0,
+    borderRadius: 0,
+    backgroundColor: 'transparent',
+    shadowOpacity: 0,
+    elevation: 0,
   },
-  authorName: {
-    fontSize: 13,
-    color: '#666',
-    marginLeft: 6,
-    fontWeight: '600',
-  },
-  featuredAuthorText: {
-    color: '#A5D6A7',
-  },
-  authorNameArabic: {
-    fontSize: 13,
-    color: '#666',
-    marginLeft: 4,
-    fontFamily: 'NotoSansArabic-Bold',
-  },
-  description: {
-    fontSize: 13,
-    color: '#888',
-    lineHeight: 20,
-    marginBottom: 16,
-  },
-  featuredDescriptionText: {
-    color: '#C8E6C9',
-  },
-  cardFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 12,
-  },
-  cardActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  favoriteButton: {
-    padding: 8,
-  },
-  languageTag: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(27, 94, 32, 0.1)',
-    borderRadius: 12,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-  },
-  languageText: {
-    fontSize: 11,
-    color: '#1B5E20',
-    marginLeft: 4,
-    fontWeight: '600',
-  },
-  featuredLanguageText: {
-    color: '#D4AF37',
-  },
-  readButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#1B5E20',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  featuredReadButton: {
-    backgroundColor: '#D4AF37',
-  },
-  readButtonText: {
-    fontSize: 12,
-    color: '#FFFFFF',
-    marginLeft: 4,
-    fontWeight: 'bold',
-  },
-  featuredReadButtonText: {
-    color: '#1B5E20',
-  },
-  emptyContainer: {
-    alignItems: 'center',
-    paddingVertical: 48,
-    paddingHorizontal: 20,
-  },
-  emptyText: {
-    fontSize: 18,
-    color: '#666',
-    marginTop: 16,
-    fontWeight: '600',
-  },
-  emptySubtext: {
-    fontSize: 14,
-    color: '#888',
-    marginTop: 8,
-    textAlign: 'center',
-  },
+  langTile: { width: 36, height: 36, borderRadius: Radius.sm, alignItems: 'center', justifyContent: 'center', marginTop: 2 },
+  meta: { flexDirection: 'row', gap: 6, marginTop: 8 },
+  tag: { fontSize: 11, fontWeight: '700', paddingHorizontal: 8, paddingVertical: 3, borderRadius: Radius.pill, overflow: 'hidden' },
 });

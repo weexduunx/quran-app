@@ -28,13 +28,16 @@ interface Location {
   latitude: number;
   longitude: number;
   timezone: string;
+  /** Décalage UTC en heures du lieu (Dakar : 0) */
+  utcOffset?: number;
 }
 
 class PrayerTimesService {
   private defaultLocation: Location = {
     latitude: 14.6928, // Dakar, Sénégal
     longitude: -17.4467,
-    timezone: 'Africa/Dakar'
+    timezone: 'Africa/Dakar',
+    utcOffset: 0,
   };
 
   /**
@@ -107,7 +110,7 @@ class PrayerTimesService {
 
     // Déterminer la prière actuelle et la suivante
     const now = new Date();
-    const prayerArray = Object.values(times);
+    const prayerArray = Object.values(times).filter((p) => p !== times.sunrise);
 
     let currentPrayer: PrayerTime | null = null;
     let nextPrayer: PrayerTime | null = null;
@@ -162,73 +165,64 @@ class PrayerTimesService {
   }
 
   /**
-   * Calcul des heures de prière basé sur la position solaire (méthode MWL)
+   * Calcul des heures de prière basé sur la position solaire (méthode MWL).
+   * Formules astronomiques standard (PrayTimes / NOAA) : déclinaison et
+   * équation du temps calculées à partir de la date julienne.
+   * Les heures renvoyées sont exprimées dans le fuseau du lieu (utcOffset).
    */
   private calculateSolarPrayerTimes(date: Date, location: Location) {
-    const { latitude, longitude } = location;
+    const { latitude: lat, longitude: lon } = location;
+    const utcOffset = location.utcOffset ?? 0;
+    const d2r = Math.PI / 180;
+    const r2d = 180 / Math.PI;
+    const fix = (a: number, b: number) => {
+      const r = a - b * Math.floor(a / b);
+      return r < 0 ? r + b : r;
+    };
 
-    // Calcul du jour de l'année
-    const dayOfYear = this.getDayOfYear(date);
+    // Position du soleil à midi UTC
+    const jd = Date.UTC(date.getFullYear(), date.getMonth(), date.getDate(), 12) / 86400000 + 2440587.5;
+    const D = jd - 2451545.0;
+    const g = fix(357.529 + 0.98560028 * D, 360);
+    const q = fix(280.459 + 0.98564736 * D, 360);
+    const L = fix(q + 1.915 * Math.sin(g * d2r) + 0.02 * Math.sin(2 * g * d2r), 360);
+    const e = 23.439 - 0.00000036 * D;
+    const RA = fix((Math.atan2(Math.cos(e * d2r) * Math.sin(L * d2r), Math.cos(L * d2r)) * r2d) / 15, 24);
+    const decl = Math.asin(Math.sin(e * d2r) * Math.sin(L * d2r)) * r2d;
+    let eqt = q / 15 - RA;
+    eqt -= 24 * Math.round(eqt / 24);
 
-    // Déclinaison solaire
-    const declination = 23.45 * Math.sin(Math.PI * (284 + dayOfYear) / 365 * Math.PI / 180);
+    const noon = 12 - lon / 15 - eqt; // heure UTC du midi solaire
 
-    // Équation du temps (approximation simple)
-    const equationOfTime = 4 * (longitude - 15 * 0); // GMT offset pour Dakar
+    // Durée (h) entre le midi solaire et l'instant où le soleil est à `angle`° sous l'horizon
+    const T = (angle: number) =>
+      (Math.acos(
+        (-Math.sin(angle * d2r) - Math.sin(decl * d2r) * Math.sin(lat * d2r)) /
+          (Math.cos(decl * d2r) * Math.cos(lat * d2r))
+      ) * r2d) / 15;
 
-    // Calcul des heures
-    const latRad = latitude * Math.PI / 180;
-    const declRad = declination * Math.PI / 180;
+    // Asr (école malikite/chaféite : ombre = 1 × objet + ombre de midi)
+    const asrAngle = -Math.atan(1 / (1 + Math.tan(Math.abs(lat - decl) * d2r))) * r2d;
 
-    // Midi solaire
-    const solarNoon = 12 - equationOfTime / 60;
-
-    // Sunrise/Maghrib (angle -0.833° pour la réfraction)
-    const sunriseAngle = -0.833;
-    const timeCorrection = Math.acos(-Math.tan(latRad) * Math.tan(declRad) +
-                                     Math.sin(sunriseAngle * Math.PI / 180) /
-                                     (Math.cos(latRad) * Math.cos(declRad))) * 12 / Math.PI;
-
-    const sunrise = solarNoon - timeCorrection;
-    const maghrib = solarNoon + timeCorrection;
-
-    // Fajr (MWL: -18°)
-    const fajrAngle = -18;
-    const fajrCorrection = Math.acos(-Math.tan(latRad) * Math.tan(declRad) +
-                                     Math.sin(fajrAngle * Math.PI / 180) /
-                                     (Math.cos(latRad) * Math.cos(declRad))) * 12 / Math.PI;
-    const fajr = solarNoon - fajrCorrection;
-
-    // Isha (MWL: -17°)
-    const ishaAngle = -17;
-    const ishaCorrection = Math.acos(-Math.tan(latRad) * Math.tan(declRad) +
-                                     Math.sin(ishaAngle * Math.PI / 180) /
-                                     (Math.cos(latRad) * Math.cos(declRad))) * 12 / Math.PI;
-    const isha = solarNoon + ishaCorrection;
-
-    // Asr (Shafi: longueur d'ombre = longueur objet + longueur d'ombre à midi)
-    const asrAngle = Math.atan(1 + Math.tan(Math.abs(latRad - declRad))) * 180 / Math.PI;
-    const asrCorrection = Math.acos((Math.sin(asrAngle * Math.PI / 180) -
-                                     Math.sin(latRad) * Math.sin(declRad)) /
-                                     (Math.cos(latRad) * Math.cos(declRad))) * 12 / Math.PI;
-    const asr = solarNoon + asrCorrection;
+    const local = (h: number) => h + utcOffset;
 
     return {
-      fajr: this.formatTimeDecimal(fajr),
-      sunrise: this.formatTimeDecimal(sunrise),
-      dhuhr: this.formatTimeDecimal(solarNoon),
-      asr: this.formatTimeDecimal(asr),
-      maghrib: this.formatTimeDecimal(maghrib),
-      isha: this.formatTimeDecimal(isha)
+      fajr: this.formatTimeDecimal(local(noon - T(18))),
+      sunrise: this.formatTimeDecimal(local(noon - T(0.833))),
+      dhuhr: this.formatTimeDecimal(local(noon)),
+      asr: this.formatTimeDecimal(local(noon + T(asrAngle))),
+      maghrib: this.formatTimeDecimal(local(noon + T(0.833))),
+      isha: this.formatTimeDecimal(local(noon + T(17))),
     };
   }
 
   /**
-   * Convertit une heure décimale en format HH:MM
+   * Convertit une heure décimale en format HH:MM (arrondi à la minute, sans « 12:60 »)
    */
   private formatTimeDecimal(timeDecimal: number): string {
-    const hours = Math.floor(timeDecimal);
-    const minutes = Math.round((timeDecimal - hours) * 60);
+    const totalMinutes = ((Math.round(timeDecimal * 60) % 1440) + 1440) % 1440;
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
     return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
   }
 
@@ -244,9 +238,16 @@ class PrayerTimesService {
   /**
    * Parse une heure string vers un objet Date
    */
-  private parseTimeToDate(timeString: string, year: number, month: number, day: number): Date {
+  private parseTimeToDate(
+    timeString: string,
+    year: number,
+    month: number,
+    day: number,
+    utcOffset: number = this.defaultLocation.utcOffset ?? 0
+  ): Date {
+    // Instant absolu : l'heure affichée est celle du lieu, quel que soit le fuseau du téléphone
     const [hours, minutes] = timeString.split(':').map(Number);
-    return new Date(year, month, day, hours, minutes);
+    return new Date(Date.UTC(year, month, day, hours, minutes) - utcOffset * 3600000);
   }
 
   /**

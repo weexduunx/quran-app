@@ -1,21 +1,20 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
+import { DarkTheme, DefaultTheme, ThemeProvider, Theme } from '@react-navigation/native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import React, { useEffect } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import 'react-native-reanimated';
 import NetInfo from '@react-native-community/netinfo';
 import { useFonts, Amiri_400Regular } from '@expo-google-fonts/amiri';
 import {
   ScheherazadeNew_400Regular,
-  ScheherazadeNew_700Bold
+  ScheherazadeNew_700Bold,
 } from '@expo-google-fonts/scheherazade-new';
 import * as SplashScreen from 'expo-splash-screen';
 
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { useQuranStore } from '../stores/quranStore';
-import { OfflineBanner } from '../components/OfflineBanner';
+import { useAppTheme } from '@/hooks/useAppTheme';
+import { useQuranStore } from '@/stores/quranStore';
+import { OfflineBanner } from '@/components/OfflineBanner';
 
-// Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
 
 export const unstable_settings = {
@@ -23,42 +22,55 @@ export const unstable_settings = {
 };
 
 export default function RootLayout() {
-  const colorScheme = useColorScheme();
-  const { setOffline } = useQuranStore();
+  const { colors, isDark } = useAppTheme();
+  const setOffline = useQuranStore((s) => s.setOffline);
 
-  const [fontsLoaded] = useFonts({
+  const [fontsLoaded, fontError] = useFonts({
     Amiri_400Regular,
     ScheherazadeNew_400Regular,
     ScheherazadeNew_700Bold,
   });
 
   useEffect(() => {
-    if (fontsLoaded) {
-      SplashScreen.hideAsync();
-    }
-  }, [fontsLoaded]);
+    // On masque le splash même si une police échoue : mieux vaut une police
+    // système qu'une application bloquée sur l'écran de démarrage.
+    if (fontsLoaded || fontError) SplashScreen.hideAsync();
+  }, [fontsLoaded, fontError]);
 
   useEffect(() => {
-    const unsubscribe = NetInfo.addEventListener(state => {
-      setOffline(!state.isConnected || !state.isInternetReachable);
+    const unsubscribe = NetInfo.addEventListener((state) => {
+      setOffline(state.isConnected === false || state.isInternetReachable === false);
     });
-
     return unsubscribe;
   }, [setOffline]);
 
-  if (!fontsLoaded) {
-    return null;
-  }
+  const navTheme: Theme = useMemo(() => {
+    const base = isDark ? DarkTheme : DefaultTheme;
+    return {
+      ...base,
+      colors: {
+        ...base.colors,
+        primary: colors.primary,
+        background: colors.background,
+        card: colors.surface,
+        text: colors.text,
+        border: colors.border,
+      },
+    };
+  }, [isDark, colors]);
+
+  if (!fontsLoaded && !fontError) return null;
 
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <OfflineBanner />
-      <Stack>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="surah/[id]" options={{ headerShown: false }} />
-        <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
+    <ThemeProvider value={navTheme}>
+      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.background } }}>
+        <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="surah/[id]" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="bookmarks" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="tafsir/[bookId]" options={{ animation: 'slide_from_right' }} />
       </Stack>
-      <StatusBar style="auto" />
+      <OfflineBanner />
+      <StatusBar style={isDark ? 'light' : 'dark'} />
     </ThemeProvider>
   );
 }

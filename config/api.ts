@@ -2,10 +2,15 @@
  * Configuration des APIs
  */
 
+/** Garantit le suffixe /v1 attendu par le backend Laravel, sans double slash. */
+function normalizeBaseUrl(url: string): string {
+  const trimmed = url.replace(/\/+$/, '');
+  return trimmed.endsWith('/v1') ? trimmed : `${trimmed}/v1`;
+}
+
 export const API_CONFIG = {
-  BACKEND_URL: __DEV__
-    ? 'http://192.168.1.47:8000/api/v1'  // Développement local
-    : 'https://your-production-api.com/api/v1', // Production
+  // Source unique : EXPO_PUBLIC_API_URL dans .env (ex. http://192.168.1.47:8000/api)
+  BACKEND_URL: normalizeBaseUrl(process.env.EXPO_PUBLIC_API_URL ?? 'http://192.168.1.47:8000/api'),
 
   // Timeouts
   REQUEST_TIMEOUT: 10000, // 10 secondes

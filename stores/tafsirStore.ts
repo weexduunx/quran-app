@@ -2,204 +2,157 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+export type TafsirLanguage = 'arabic' | 'english' | 'wolof';
+
 export interface TafsirBook {
-  id: number;
+  id: string;
   title: string;
   titleArabic: string;
   author: string;
-  authorArabic: string;
   description: string;
-  language: 'arabic' | 'french' | 'wolof' | 'both';
-  category: 'classical' | 'modern' | 'contemporary';
-  featured?: boolean;
-  available?: boolean;
-  apiId?: string; // Pour les API externes
+  language: TafsirLanguage;
+  kind: 'text' | 'audio';
+  /** Ressource tafsir de l'API Quran.com v4 (livres écrits) */
+  quranComId?: number;
+  /** Mention de la source affichée sous le lecteur (livres audio) */
+  sourceNote?: string;
+  level?: 'débutant' | 'intermédiaire' | 'approfondi';
 }
 
-export interface TafsirContent {
-  id: number;
-  bookId: number;
-  surahId: number;
-  verseId: number;
-  content: string;
-  contentArabic?: string;
-  reference?: string;
-  audioUrl?: string; // URL de l'audio du tafsir
-  audioDuration?: number; // Durée en secondes
-}
-
-interface TafsirState {
-  books: TafsirBook[];
-  selectedBook: TafsirBook | null;
-  favoriteBooks: number[];
-  tafsirContent: { [key: string]: TafsirContent }; // key: "bookId-surahId-verseId"
-  isLoading: boolean;
-  error: string | null;
-
-  // Actions
-  setBooks: (books: TafsirBook[]) => void;
-  setSelectedBook: (book: TafsirBook | null) => void;
-  addToFavorites: (bookId: number) => void;
-  removeFromFavorites: (bookId: number) => void;
-  isFavorite: (bookId: number) => boolean;
-  setTafsirContent: (key: string, content: TafsirContent) => void;
-  getTafsirContent: (bookId: number, surahId: number, verseId: number) => TafsirContent | null;
-  setLoading: (loading: boolean) => void;
-  setError: (error: string | null) => void;
-}
-
-// Liste des livres de Tafsir disponibles
-// Les tafsirs audio en wolof (Baye Niasse, Moustapha Gueye) sont mis en avant en premier
+/**
+ * Uniquement des contenus réels et vérifiés :
+ * - livres écrits : API publique Quran.com (textes intégraux, par verset)
+ * - tafsirs wolof : enregistrements audio de Cheikh Ibrahima Niasse et d'Oustaz
+ *   Ibrahima Fall (Internet Archive)
+ *
+ * Aucun tafsir écrit en français n'est disponible librement : les livres
+ * proposés sont en arabe et en anglais. Le texte du verset reste affiché en
+ * français au-dessus du commentaire.
+ */
 export const tafsirBooks: TafsirBook[] = [
   {
-    id: 6,
+    id: 'baye-niasse',
     title: 'Tafsir Baye Niasse',
     titleArabic: 'تفسير الشيخ إبراهيم نياس',
-    author: 'Cheikh Ibrahima Niasse (Baye Niasse)',
-    authorArabic: 'الشيخ إبراهيم نياس',
-    description: "Tafsir audio en wolof par le fondateur du mouvement niassène, sourate par sourate.",
+    author: 'Cheikh Ibrahima Niasse',
+    description: 'Le Coran expliqué en wolof, sourate par sourate. Enregistrements audio.',
     language: 'wolof',
-    category: 'contemporary',
-    featured: true,
-    available: true,
-    apiId: 'baye-niasse'
+    kind: 'audio',
+    sourceNote: 'Sourates 41 à 43 absentes de la collection. Source : Internet Archive (Tafsir Baye NIASS).',
   },
   {
-    id: 7,
-    title: 'Tafsir Imam Moustapha Gueye',
-    titleArabic: 'تفسير الإمام مصطفى غاي',
-    author: 'Imam Moustapha Gueye',
-    authorArabic: 'الإمام مصطفى غاي',
-    description: 'Explications audio du Coran en wolof par un éminent savant sénégalais, adapté au contexte local.',
+    id: 'ibrahima-fall',
+    title: 'Tafsir Oustaz Ibrahima Fall',
+    titleArabic: 'تفسير الشيخ إبراهيم فال',
+    author: 'Oustaz Ibrahima Fall (Ndar)',
+    description: 'Tafsir complet en wolof : les 114 sourates, environ 90 heures d’explications.',
     language: 'wolof',
-    category: 'contemporary',
-    featured: true,
-    available: true,
-    apiId: 'moustapha-gueye'
+    kind: 'audio',
+    sourceNote: 'Les 114 sourates. Source : Internet Archive (Tafsir Coran de Oustaz Ibrahima Fall).',
   },
   {
-    id: 1,
+    id: 'muyassar',
+    title: 'At-Tafsir Al-Muyassar',
+    titleArabic: 'التفسير الميسر',
+    author: 'Complexe du Roi Fahd',
+    description: 'Explication courte et simple de chaque verset. Idéal pour commencer.',
+    language: 'arabic',
+    kind: 'text',
+    quranComId: 16,
+    level: 'débutant',
+  },
+  {
+    id: 'ibn-kathir-en',
+    title: 'Ibn Kathir (abrégé)',
+    titleArabic: 'تفسير ابن كثير - مختصر',
+    author: 'Ibn Kathir',
+    description: 'La version anglaise abrégée du tafsir le plus lu au monde.',
+    language: 'english',
+    kind: 'text',
+    quranComId: 169,
+    level: 'intermédiaire',
+  },
+  {
+    id: 'saadi',
+    title: "Tafsir As-Sa'di",
+    titleArabic: 'تفسير السعدي',
+    author: "Abd ar-Rahman As-Sa'di",
+    description: 'Clair et accessible, centré sur le sens et les leçons des versets.',
+    language: 'arabic',
+    kind: 'text',
+    quranComId: 91,
+    level: 'intermédiaire',
+  },
+  {
+    id: 'ibn-kathir',
     title: 'Tafsir Ibn Kathir',
     titleArabic: 'تفسير ابن كثير',
     author: 'Ibn Kathir',
-    authorArabic: 'ابن كثير',
-    description: "L'un des tafsirs les plus respectés, basé sur le Coran, la Sunnah et les paroles des Compagnons.",
-    language: 'both',
-    category: 'classical',
-    featured: true,
-    available: true,
-    apiId: 'ibn-kathir'
+    description: 'Explique le Coran par le Coran, la Sunna et les paroles des Compagnons.',
+    language: 'arabic',
+    kind: 'text',
+    quranComId: 14,
+    level: 'approfondi',
   },
   {
-    id: 2,
+    id: 'tabari',
     title: 'Tafsir At-Tabari',
     titleArabic: 'تفسير الطبري',
     author: 'At-Tabari',
-    authorArabic: 'الطبري',
-    description: 'Le plus ancien tafsir complet existant, source de référence pour tous les commentaires ultérieurs.',
+    description: 'Le plus ancien grand tafsir complet, référence des commentateurs.',
     language: 'arabic',
-    category: 'classical',
-    featured: true,
-    available: true,
-    apiId: 'at-tabari'
+    kind: 'text',
+    quranComId: 15,
+    level: 'approfondi',
   },
   {
-    id: 3,
+    id: 'qurtubi',
     title: 'Tafsir Al-Qurtubi',
     titleArabic: 'تفسير القرطبي',
     author: 'Al-Qurtubi',
-    authorArabic: 'القرطبي',
-    description: 'Excellent pour comprendre les règles juridiques dérivées du Coran.',
+    description: 'Très riche sur les règles juridiques tirées des versets.',
     language: 'arabic',
-    category: 'classical',
-    available: true,
-    apiId: 'al-qurtubi'
+    kind: 'text',
+    quranComId: 90,
+    level: 'approfondi',
   },
-  {
-    id: 4,
-    title: 'Fi Zilal Al-Quran',
-    titleArabic: 'في ظلال القرآن',
-    author: 'Sayyid Qutb',
-    authorArabic: 'سيد قطب',
-    description: "Tafsir moderne qui met l'accent sur l'application pratique du Coran dans la vie contemporaine.",
-    language: 'both',
-    category: 'modern',
-    available: true,
-    apiId: 'sayyid-qutb'
-  },
-  {
-    id: 5,
-    title: "Tafsir As-Sa'di",
-    titleArabic: 'تفسير السعدي',
-    author: "Abdur-Rahman As-Sa'di",
-    authorArabic: 'عبد الرحمن السعدي',
-    description: 'Tafsir concis et clair, idéal pour les débutants.',
-    language: 'arabic',
-    category: 'contemporary',
-    available: true,
-    apiId: 'as-sadi'
-  }
 ];
+
+export const getTafsirBook = (id?: string) => tafsirBooks.find((b) => b.id === id);
+
+export const languageLabel: Record<TafsirLanguage, string> = {
+  arabic: 'Arabe',
+  english: 'Anglais',
+  wolof: 'Wolof · audio',
+};
+
+interface TafsirState {
+  favoriteBooks: string[];
+  /** Dernier livre écrit consulté : ouvert depuis le bouton « Tafsir » d'un verset */
+  preferredTextBook: string;
+  toggleFavorite: (id: string) => void;
+  setPreferredTextBook: (id: string) => void;
+}
 
 export const useTafsirStore = create<TafsirState>()(
   persist(
-    (set, get) => ({
-      books: tafsirBooks,
-      selectedBook: null,
+    (set) => ({
       favoriteBooks: [],
-      tafsirContent: {},
-      isLoading: false,
-      error: null,
-
-      setBooks: (books) => set({ books }),
-
-      setSelectedBook: (book) => set({ selectedBook: book }),
-
-      addToFavorites: (bookId) =>
-        set((state) => ({
-          favoriteBooks: state.favoriteBooks.includes(bookId)
-            ? state.favoriteBooks
-            : [...state.favoriteBooks, bookId]
+      preferredTextBook: 'muyassar',
+      toggleFavorite: (id) =>
+        set((s) => ({
+          favoriteBooks: s.favoriteBooks.includes(id)
+            ? s.favoriteBooks.filter((b) => b !== id)
+            : [...s.favoriteBooks, id],
         })),
-
-      removeFromFavorites: (bookId) =>
-        set((state) => ({
-          favoriteBooks: state.favoriteBooks.filter(id => id !== bookId)
-        })),
-
-      isFavorite: (bookId) => {
-        const state = get();
-        return state.favoriteBooks.includes(bookId);
-      },
-
-      setTafsirContent: (key, content) =>
-        set((state) => ({
-          tafsirContent: {
-            ...state.tafsirContent,
-            [key]: content
-          }
-        })),
-
-      getTafsirContent: (bookId, surahId, verseId) => {
-        const state = get();
-        const key = `${bookId}-${surahId}-${verseId}`;
-        return state.tafsirContent[key] || null;
-      },
-
-      setLoading: (loading) => set({ isLoading: loading }),
-
-      setError: (error) => set({ error }),
+      setPreferredTextBook: (id) => set({ preferredTextBook: id }),
     }),
     {
       name: 'tafsir-storage',
       storage: createJSONStorage(() => AsyncStorage),
-      version: 1, // Nouvel ordre des tafsirs + Baye Niasse/Ahmadou Bamba mis à jour
-      migrate: (persistedState: any, version) => {
-        if (version < 1) {
-          return { ...persistedState, books: tafsirBooks };
-        }
-        return persistedState;
-      },
+      version: 2,
+      // Les anciennes données (contenus simulés, IDs numériques) sont abandonnées
+      migrate: () => ({ favoriteBooks: [], preferredTextBook: 'muyassar' }),
     }
   )
 );

@@ -16,6 +16,7 @@ export interface Verse {
   verse_number: number;
   global_number: number;
   text_arabic: string;
+  text_uthmani?: string;
   text_french: string;
   text_transliteration?: string;
   juz?: number;

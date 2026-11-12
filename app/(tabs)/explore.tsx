@@ -1,217 +1,195 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  View,
-  Text,
-  FlatList,
-  StyleSheet,
   ActivityIndicator,
+  FlatList,
+  RefreshControl,
+  StyleSheet,
+  Text,
   TextInput,
-  Alert,
+  View,
 } from 'react-native';
 import { router } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
+
 import { SurahCard } from '@/components/SurahCard';
 import { useQuranStore, Surah } from '@/stores/quranStore';
+import { useProgressStore } from '@/stores/progressStore';
 import { quranApi } from '@/services/api';
 import { EmergencyCleanup } from '@/utils/emergencyCleanup';
+import { useAppTheme } from '@/hooks/useAppTheme';
+import { Radius, Spacing, Type } from '@/constants/theme';
+import { Button, Chip } from '@/components/ui/kit';
+
+type Filter = 'all' | 'meccan' | 'medinan';
+
+/** Minuscules + suppression des accents et des tirets : « Al-Baqara » ≈ « albaqara » */
+const normalize = (s: string) =>
+  (s || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ'’\-\s]/g, '');
 
 export default function QuranScreen() {
-  const {
-    surahs,
-    setSurahs,
-    setCurrentSurah,
-    isLoading,
-    setLoading,
-    error,
-    setError,
-  } = useQuranStore();
+  const { colors } = useAppTheme();
+  const insets = useSafeAreaInsets();
+  const { surahs, setSurahs, setCurrentSurah, isLoading, setLoading } = useQuranStore();
+  const lastReadId = useProgressStore((s) => s.lastRead?.surahId);
 
-  const [searchQuery, setSearchQuery] = useState('');
-  const [filteredSurahs, setFilteredSurahs] = useState<Surah[]>([]);
+  const [query, setQuery] = useState('');
+  const [filter, setFilter] = useState<Filter>('all');
+  const [error, setError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    const initializeApp = async () => {
-      try {
-        // Vérifier et nettoyer le cache corrompu au démarrage
-        console.log('🔍 Vérification du cache au démarrage...');
-        await EmergencyCleanup.diagnoseAndFix(false); // Silencieux au démarrage
-      } catch (error) {
-        console.log('Diagnostic du cache échoué:', error);
-      }
-      loadSurahs();
-    };
-
-    initializeApp();
-  }, []);
-
-  useEffect(() => {
-    if (searchQuery.trim()) {
-      const filtered = surahs.filter((surah) =>
-        surah.name_arabic.includes(searchQuery) ||
-        surah.name_french.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        surah.name_transliteration.toLowerCase().includes(searchQuery.toLowerCase())
-      );
-      setFilteredSurahs(filtered);
-    } else {
-      setFilteredSurahs(surahs);
-    }
-  }, [searchQuery, surahs]);
-
-  const loadSurahs = async () => {
+  const loadSurahs = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
-      const surahsData = await quranApi.getSurahs();
-      setSurahs(surahsData);
+      setSurahs(await quranApi.getSurahs());
     } catch (err) {
-      console.error('Error loading surahs:', err);
-      setError('Erreur lors du chargement des sourates');
-
-      // Détecter si c'est une erreur JSON
-      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
-      const isJsonError = errorMessage.includes('JSON Parse error') || errorMessage.includes('SyntaxError');
-
-      if (isJsonError) {
-        Alert.alert(
-          'Données corrompues',
-          'Des données corrompues ont été détectées. Voulez-vous vider le cache et réessayer ?',
-          [
-            { text: 'Annuler', style: 'cancel' },
-            {
-              text: 'Vider le cache',
-              onPress: async () => {
-                try {
-                  console.log('Tentative de nettoyage forcé...');
-                  const success = await EmergencyCleanup.forceCleanAll();
-                  if (success) {
-                    console.log('Cache forcé vidé - Rechargement des sourates');
-                    setTimeout(() => loadSurahs(), 1000); // Délai pour s'assurer du nettoyage
-                  } else {
-                    Alert.alert('Erreur', 'Impossible de nettoyer le cache');
-                  }
-                } catch (cacheError) {
-                  console.error('Erreur lors du nettoyage du cache:', cacheError);
-                  Alert.alert('Erreur', 'Impossible de nettoyer le cache');
-                }
-              }
-            }
-          ]
-        );
-      } else {
-        Alert.alert(
-          'Erreur',
-          'Impossible de charger les sourates. Vérifiez votre connexion.',
-          [{ text: 'Réessayer', onPress: loadSurahs }]
-        );
+      const msg = err instanceof Error ? err.message : '';
+      if (msg.includes('JSON Parse error') || msg.includes('SyntaxError')) {
+        // Cache corrompu : on nettoie automatiquement plutôt que d'interroger l'utilisateur
+        await EmergencyCleanup.forceCleanAll().catch(() => {});
       }
+      setError('Impossible de charger les sourates. Vérifiez votre connexion.');
     } finally {
       setLoading(false);
     }
-  };
+  }, [setLoading, setSurahs]);
 
-  const handleSurahPress = (surah: Surah) => {
-    setCurrentSurah(surah);
-    router.push(`/surah/${surah.id}`);
-  };
+  useEffect(() => {
+    if (surahs.length === 0) {
+      EmergencyCleanup.diagnoseAndFix(false)
+        .catch(() => {})
+        .finally(loadSurahs);
+    }
+  }, [loadSurahs, surahs.length]);
 
-  const renderSurah = ({ item }: { item: Surah }) => (
-    <SurahCard surah={item} onPress={handleSurahPress} />
+  const filtered = useMemo(() => {
+    const q = normalize(query);
+    return surahs.filter((s) => {
+      const t = (s.revelation_type || '').toLowerCase();
+      if (filter === 'meccan' && !(t.startsWith('mec') || t.startsWith('mak'))) return false;
+      if (filter === 'medinan' && !t.startsWith('med')) return false;
+      if (!q) return true;
+      return (
+        String(s.number) === query.trim() ||
+        s.name_arabic.includes(query.trim()) ||
+        normalize(s.name_french).includes(q) ||
+        normalize(s.name_transliteration).includes(q)
+      );
+    });
+  }, [surahs, query, filter]);
+
+  const handlePress = useCallback(
+    (surah: Surah) => {
+      setCurrentSurah(surah);
+      router.push(`/surah/${surah.id}`);
+    },
+    [setCurrentSurah]
   );
 
-  const renderHeader = () => (
-    <View style={styles.header}>
-      <Text style={styles.title}>القرآن الكريم</Text>
-      <Text style={styles.subtitle}>Le Saint Coran</Text>
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await loadSurahs();
+    setRefreshing(false);
+  };
 
-      <View style={styles.searchContainer}>
+  const header = (
+    <View style={{ paddingTop: insets.top + Spacing.md }}>
+      <View style={styles.titleBlock}>
+        <Text style={[Type.largeTitle, { color: colors.text }]}>Le Coran</Text>
+        <Text style={[Type.callout, { color: colors.textMuted }]}>
+          114 sourates · arabe, français et phonétique
+        </Text>
+      </View>
+
+      <View style={[styles.search, { backgroundColor: colors.surfaceAlt }]}>
+        <Ionicons name="search" size={18} color={colors.textSubtle} />
         <TextInput
-          style={styles.searchInput}
-          placeholder="Rechercher une sourate..."
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-          placeholderTextColor="#999"
+          style={[styles.searchInput, { color: colors.text }]}
+          placeholder="Nom, numéro ou traduction…"
+          placeholderTextColor={colors.textSubtle}
+          value={query}
+          onChangeText={setQuery}
+          autoCorrect={false}
+          returnKeyType="search"
+          accessibilityLabel="Rechercher une sourate"
         />
+        {query.length > 0 && (
+          <Ionicons name="close-circle" size={18} color={colors.textSubtle} onPress={() => setQuery('')} />
+        )}
+      </View>
+
+      <View style={styles.chips}>
+        <Chip label="Toutes" active={filter === 'all'} onPress={() => setFilter('all')} />
+        <Chip label="Mecquoises" active={filter === 'meccan'} onPress={() => setFilter('meccan')} />
+        <Chip label="Médinoises" active={filter === 'medinan'} onPress={() => setFilter('medinan')} />
       </View>
     </View>
   );
 
   if (isLoading && surahs.length === 0) {
     return (
-      <SafeAreaView style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#1B5E20" />
-        <Text style={styles.loadingText}>Chargement des sourates...</Text>
-      </SafeAreaView>
+      <View style={[styles.center, { backgroundColor: colors.background }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={[Type.callout, { color: colors.textMuted, marginTop: Spacing.lg }]}>
+          Chargement des sourates…
+        </Text>
+      </View>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <FlatList
-        data={filteredSurahs}
-        renderItem={renderSurah}
-        keyExtractor={(item) => item.id.toString()}
-        ListHeaderComponent={renderHeader}
-        contentContainerStyle={styles.listContent}
-        showsVerticalScrollIndicator={false}
-      />
-    </SafeAreaView>
+    <FlatList
+      style={{ flex: 1, backgroundColor: colors.background }}
+      data={filtered}
+      keyExtractor={(item) => String(item.id)}
+      renderItem={({ item }) => (
+        <SurahCard surah={item} onPress={handlePress} isLastRead={item.id === lastReadId} />
+      )}
+      ListHeaderComponent={header}
+      ListEmptyComponent={
+        <View style={styles.empty}>
+          <Ionicons
+            name={error ? 'cloud-offline-outline' : 'search-outline'}
+            size={40}
+            color={colors.textSubtle}
+          />
+          <Text style={[Type.callout, { color: colors.textMuted, textAlign: 'center', marginVertical: Spacing.lg }]}>
+            {error ?? `Aucune sourate ne correspond à « ${query} »`}
+          </Text>
+          {error && <Button title="Réessayer" icon="refresh" variant="secondary" onPress={loadSurahs} />}
+        </View>
+      }
+      keyboardShouldPersistTaps="handled"
+      keyboardDismissMode="on-drag"
+      initialNumToRender={16}
+      contentContainerStyle={{ paddingBottom: Spacing.xxxl }}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
+    />
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F5F5F5',
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  titleBlock: { paddingHorizontal: Spacing.xl, marginBottom: Spacing.lg },
+  search: {
+    flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F5F5F5',
+    marginHorizontal: Spacing.xl,
+    paddingHorizontal: Spacing.md,
+    height: 46,
+    borderRadius: Radius.md,
+    gap: Spacing.sm,
   },
-  loadingText: {
-    marginTop: 16,
-    fontSize: 16,
-    color: '#666',
+  searchInput: { flex: 1, fontSize: 16, paddingVertical: 0 },
+  chips: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+    paddingHorizontal: Spacing.xl,
+    paddingVertical: Spacing.lg,
   },
-  header: {
-    backgroundColor: '#1B5E20',
-    paddingHorizontal: 20,
-    paddingVertical: 24,
-    marginBottom: 16,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#fff',
-    textAlign: 'center',
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontSize: 18,
-    color: '#A5D6A7',
-    textAlign: 'center',
-    marginBottom: 20,
-  },
-  searchContainer: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 3.84,
-  },
-  searchInput: {
-    fontSize: 16,
-    paddingVertical: 12,
-    color: '#333',
-  },
-  listContent: {
-    paddingBottom: 20,
-  },
+  empty: { alignItems: 'center', padding: Spacing.xxxl },
 });

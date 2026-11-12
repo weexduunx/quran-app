@@ -1,603 +1,300 @@
-import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  Switch,
-  Alert,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import React from 'react';
+import { Alert, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { router } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
-import { wordSyncService } from '@/services/wordSyncService';
-import { useReciterStore, popularReciters } from '@/stores/reciterStore';
-import { quranApi } from '@/services/api';
 
-interface SettingItem {
-  id: string;
-  title: string;
-  subtitle?: string;
-  type: 'toggle' | 'option' | 'action';
-  icon: string;
-  value?: boolean | string;
-  options?: string[];
-}
+import {
+  useSettingsStore,
+  ARABIC_SIZES,
+  TRANSLATION_SIZES,
+  ThemeMode,
+} from '@/stores/settingsStore';
+import { useProgressStore } from '@/stores/progressStore';
+import { useReciterStore } from '@/stores/reciterStore';
+import { useTafsirStore } from '@/stores/tafsirStore';
+import { quranApi } from '@/services/api';
+import { useAppTheme } from '@/hooks/useAppTheme';
+import { toHijri, formatHijri } from '@/utils/hijri';
+import { ArabicFonts, Radius, Spacing, Type } from '@/constants/theme';
+import { IconButton, Segmented, SectionTitle, Tap } from '@/components/ui/kit';
+
+type IconName = React.ComponentProps<typeof Ionicons>['name'];
 
 export default function SettingsScreen() {
-  const { getSelectedReciter, setSelectedReciter } = useReciterStore();
-  const selectedReciter = getSelectedReciter();
+  const { colors } = useAppTheme();
+  const insets = useSafeAreaInsets();
+  const s = useSettingsStore();
+  const bookmarksCount = useProgressStore((p) => p.bookmarks.length);
+  const clearProgress = useProgressStore((p) => p.clearAll);
+  const reciter = useReciterStore((r) => r.getSelectedReciter());
 
-  const [settings, setSettings] = useState<{[key: string]: boolean | string}>({
-    notifications: true,
-    autoPlay: true,
-    darkMode: false,
-    downloadOverWifi: true,
-    arabicFont: 'Uthmani',
-    translationLanguage: 'Français',
-    playbackSpeed: '1.0x',
-  });
+  const arabicSize = ARABIC_SIZES[s.arabicSizeIndex];
+  const translationSize = TRANSLATION_SIZES[s.translationSizeIndex];
 
-  const updateSetting = (key: string, value: boolean | string) => {
-    setSettings(prev => ({
-      ...prev,
-      [key]: value
-    }));
-  };
-
-  const showReciterSelection = () => {
-    const options = popularReciters.map(reciter => ({
-      text: `${reciter.name} (${reciter.country})`,
-      onPress: () => {
-        setSelectedReciter(reciter);
-        Alert.alert(
-          'Récitateur sélectionné',
-          `${reciter.name} est maintenant votre récitateur par défaut.`
-        );
+  const clearCache = () =>
+    Alert.alert('Vider le cache', 'Les textes seront retéléchargés. Vos favoris et votre progression sont conservés.', [
+      { text: 'Annuler', style: 'cancel' },
+      {
+        text: 'Vider',
+        style: 'destructive',
+        onPress: async () => {
+          await quranApi.forceClearCache();
+          Alert.alert('Cache vidé', 'Le cache a été vidé avec succès.');
+        },
       },
-      style: reciter.id === selectedReciter.id ? 'default' : 'cancel' as any
-    }));
+    ]);
 
-    Alert.alert(
-      'Choisir un récitateur',
-      'Sélectionnez votre récitateur préféré:',
-      [
-        ...options,
-        { text: 'Annuler', style: 'cancel' }
-      ]
-    );
-  };
-
-  const settingsData: SettingItem[] = [
-    {
-      id: 'notifications',
-      title: 'Notifications',
-      subtitle: 'Recevoir des rappels de lecture quotidienne',
-      type: 'toggle',
-      icon: 'notifications',
-      value: settings.notifications,
-    },
-    {
-      id: 'autoPlay',
-      title: 'Lecture automatique',
-      subtitle: 'Passer automatiquement au verset suivant',
-      type: 'toggle',
-      icon: 'play-circle',
-      value: settings.autoPlay,
-    },
-    {
-      id: 'darkMode',
-      title: 'Mode sombre',
-      subtitle: 'Utiliser un thème sombre pour l\'interface',
-      type: 'toggle',
-      icon: 'moon',
-      value: settings.darkMode,
-    },
-    {
-      id: 'downloadOverWifi',
-      title: 'Téléchargement Wi-Fi uniquement',
-      subtitle: 'Ne télécharger l\'audio qu\'en Wi-Fi',
-      type: 'toggle',
-      icon: 'wifi',
-      value: settings.downloadOverWifi,
-    },
-    {
-      id: 'arabicFont',
-      title: 'Police arabe',
-      subtitle: 'Choisir le style de calligraphie',
-      type: 'option',
-      icon: 'text',
-      value: settings.arabicFont,
-      options: ['Uthmani', 'Kufi', 'Naskh', 'Thuluth'],
-    },
-    {
-      id: 'translationLanguage',
-      title: 'Langue de traduction',
-      subtitle: 'Langue principale pour les traductions',
-      type: 'option',
-      icon: 'language',
-      value: settings.translationLanguage,
-      options: ['Français', 'English', 'العربية', 'Español'],
-    },
-    {
-      id: 'reciter',
-      title: 'Récitateur par défaut',
-      subtitle: `Actuellement: ${selectedReciter.name}`,
-      type: 'action',
-      icon: 'person',
-    },
-    {
-      id: 'playbackSpeed',
-      title: 'Vitesse de lecture',
-      subtitle: 'Vitesse par défaut de récitation',
-      type: 'option',
-      icon: 'speedometer',
-      value: settings.playbackSpeed,
-      options: ['0.5x', '0.75x', '1.0x', '1.25x', '1.5x'],
-    },
-  ];
-
-  // Test de synchronisation en mode développement
-  const testWordSync = async () => {
-    try {
-      console.log('🧪 Testing word synchronization...');
-      const result = await wordSyncService.getVerseTimingData(
-        1,
-        'ar.alafasy',
-        'بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ',
-        5000
-      );
-
-      Alert.alert(
-        'Test de Synchronisation Réussi !',
-        `Source: ${result.source}\n` +
-        `Précision: ${Math.round(result.accuracy * 100)}%\n` +
-        `Mots: ${result.words.length}\n` +
-        `Premier mot: "${result.words[0]?.arabicText}" (${result.words[0]?.duration}ms)\n` +
-        `Type tajweed détecté: ${result.words[0]?.tajweedInfo?.type || 'normal'}`
-      );
-    } catch (error) {
-      Alert.alert('Erreur', `Test échoué: ${error}`);
-    }
-  };
-
-  const actionItems = [
-    // Bouton de test seulement en développement
-    ...(__DEV__ ? [{
-      id: 'testWordSync',
-      title: '🧪 Tester Synchronisation',
-      subtitle: 'Tester le système de synchronisation mot par mot',
-      icon: 'flask',
-      action: testWordSync
-    }] : []),
-    {
-      id: 'clearCache',
-      title: 'Vider le cache',
-      subtitle: 'Libérer de l\'espace de stockage',
-      icon: 'trash',
-      action: () => {
-        Alert.alert(
-          'Vider le cache',
-          'Êtes-vous sûr de vouloir vider le cache ? Cela supprimera tous les fichiers audio téléchargés.',
-          [
-            { text: 'Annuler', style: 'cancel' },
-            { text: 'Vider', style: 'destructive', onPress: async () => {
-              try {
-                await quranApi.forceClearCache();
-                wordSyncService.clearCache(); // Vider aussi le cache de synchronisation
-                Alert.alert('Cache vidé', 'Le cache a été vidé avec succès.');
-              } catch (error) {
-                console.error('Erreur lors du nettoyage du cache:', error);
-                Alert.alert('Erreur', 'Impossible de vider le cache complètement.');
-              }
-            }}
-          ]
-        );
-      }
-    },
-    {
-      id: 'forceFixData',
-      title: 'Réparer données corrompues',
-      subtitle: 'Forcer le nettoyage en cas d\'erreur JSON',
-      icon: 'build',
-      action: async () => {
-        Alert.alert(
-          'Réparation d\'urgence',
-          'Cette fonction force le nettoyage de toutes les données pour résoudre les erreurs de corruption. Continuer ?',
-          [
-            { text: 'Annuler', style: 'cancel' },
-            { text: 'Réparer', style: 'destructive', onPress: async () => {
-              try {
-                console.log('Démarrage de la réparation d\'urgence...');
-                await quranApi.forceClearCache();
-                wordSyncService.clearCache();
-                Alert.alert('Réparation terminée', 'Toutes les données ont été nettoyées. Redémarrez l\'application.');
-              } catch (error) {
-                console.error('Erreur lors de la réparation:', error);
-                Alert.alert('Erreur critique', 'Impossible de réparer. Contactez le support.');
-              }
-            }}
-          ]
-        );
-      }
-    },
-    {
-      id: 'exportBookmarks',
-      title: 'Exporter les favoris',
-      subtitle: 'Sauvegarder vos versets favoris',
-      icon: 'share',
-      action: () => {
-        Alert.alert('Export', 'Fonctionnalité en cours de développement.');
-      }
-    },
-    {
-      id: 'resetSettings',
-      title: 'Réinitialiser les paramètres',
-      subtitle: 'Remettre tous les paramètres par défaut',
-      icon: 'refresh',
-      action: () => {
-        Alert.alert(
-          'Réinitialiser',
-          'Êtes-vous sûr de vouloir réinitialiser tous les paramètres ?',
-          [
-            { text: 'Annuler', style: 'cancel' },
-            { text: 'Réinitialiser', style: 'destructive', onPress: () => {
-              setSettings({
-                notifications: true,
-                autoPlay: true,
-                darkMode: false,
-                downloadOverWifi: true,
-                arabicFont: 'Uthmani',
-                translationLanguage: 'Français',
-                reciter: 'Mishary Al-Afasy',
-                playbackSpeed: '1.0x',
-              });
-              Alert.alert('Réinitialisation', 'Les paramètres ont été réinitialisés.');
-            }}
-          ]
-        );
-      }
-    },
-  ];
-
-  const renderSettingItem = (item: SettingItem) => (
-    <View key={item.id} style={styles.settingItem}>
-      <View style={styles.settingIcon}>
-        <Ionicons name={item.icon as any} size={20} color="#1B5E20" />
-      </View>
-
-      <View style={styles.settingContent}>
-        <Text style={styles.settingTitle}>{item.title}</Text>
-        {item.subtitle && (
-          <Text style={styles.settingSubtitle}>{item.subtitle}</Text>
-        )}
-      </View>
-
-      <View style={styles.settingControl}>
-        {item.type === 'toggle' && (
-          <Switch
-            value={item.value as boolean}
-            onValueChange={(value) => updateSetting(item.id, value)}
-            trackColor={{ false: '#E0E0E0', true: '#A5D6A7' }}
-            thumbColor={item.value ? '#1B5E20' : '#f4f3f4'}
-            ios_backgroundColor="#E0E0E0"
-          />
-        )}
-
-        {item.type === 'option' && (
-          <TouchableOpacity
-            style={styles.optionButton}
-            onPress={() => {
-              Alert.alert(
-                item.title,
-                'Choisissez une option:',
-                item.options?.map(option => ({
-                  text: option,
-                  onPress: () => updateSetting(item.id, option),
-                  style: option === item.value ? 'default' : 'cancel'
-                }))
-              );
-            }}
-          >
-            <Text style={styles.optionText}>{item.value}</Text>
-            <Ionicons name="chevron-forward" size={16} color="#666" />
-          </TouchableOpacity>
-        )}
-
-        {item.type === 'action' && (
-          <TouchableOpacity
-            style={styles.optionButton}
-            onPress={() => {
-              if (item.id === 'reciter') {
-                showReciterSelection();
-              }
-            }}
-          >
-            <Ionicons name="chevron-forward" size={16} color="#666" />
-          </TouchableOpacity>
-        )}
-      </View>
-    </View>
-  );
-
-  const renderActionItem = (item: any) => (
-    <TouchableOpacity
-      key={item.id}
-      style={styles.actionItem}
-      onPress={item.action}
-    >
-      <View style={styles.settingIcon}>
-        <Ionicons
-          name={item.icon}
-          size={20}
-          color={item.id === 'testWordSync' ? '#4CAF50' : '#D32F2F'}
-        />
-      </View>
-
-      <View style={styles.settingContent}>
-        <Text style={[
-          styles.settingTitle,
-          { color: item.id === 'testWordSync' ? '#4CAF50' : '#D32F2F' }
-        ]}>
-          {item.title}
-        </Text>
-        <Text style={styles.settingSubtitle}>{item.subtitle}</Text>
-      </View>
-
-      <Ionicons name="chevron-forward" size={16} color="#666" />
-    </TouchableOpacity>
-  );
+  const resetAll = () =>
+    Alert.alert('Tout réinitialiser', 'Réglages, favoris et progression seront effacés. Continuer ?', [
+      { text: 'Annuler', style: 'cancel' },
+      {
+        text: 'Réinitialiser',
+        style: 'destructive',
+        onPress: () => {
+          s.reset();
+          clearProgress();
+          useReciterStore.getState().resetStore();
+          useTafsirStore.setState({ favoriteBooks: [], preferredTextBook: 'muyassar' });
+        },
+      },
+    ]);
 
   return (
-    <SafeAreaView style={styles.container}>
-      <LinearGradient
-        colors={['#1B5E20', '#2E7D32', '#1B5E20']}
-        style={styles.header}
-      >
-        <View style={styles.headerContent}>
-          <Ionicons name="settings" size={40} color="#D4AF37" />
-          <View style={styles.headerText}>
-            <Text style={styles.headerTitle}>Paramètres</Text>
-            <Text style={styles.headerSubtitle}>Personnalisez votre expérience</Text>
-          </View>
-        </View>
-      </LinearGradient>
+    <ScrollView
+      style={{ flex: 1, backgroundColor: colors.background }}
+      contentContainerStyle={{ paddingTop: insets.top + Spacing.md, paddingBottom: Spacing.xxxl }}
+    >
+      <View style={styles.pad}>
+        <Text style={[Type.largeTitle, { color: colors.text, marginBottom: Spacing.xl }]}>Réglages</Text>
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Ionicons name="settings-outline" size={20} color="#D4AF37" />
-            <Text style={styles.sectionTitle}>Préférences générales</Text>
-          </View>
-
-          <View style={styles.settingsGroup}>
-            {settingsData.map(renderSettingItem)}
-          </View>
-        </View>
-
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Ionicons name="construct" size={20} color="#D4AF37" />
-            <Text style={styles.sectionTitle}>Actions</Text>
-          </View>
-
-          <View style={styles.settingsGroup}>
-            {actionItems.map(renderActionItem)}
-          </View>
+        {/* Aperçu en direct */}
+        <View style={[styles.preview, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <Text
+            style={{
+              fontFamily: ArabicFonts.regular,
+              fontSize: arabicSize,
+              lineHeight: arabicSize * 1.9,
+              color: colors.arabic,
+              textAlign: 'right',
+              writingDirection: 'rtl',
+            }}
+          >
+            بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ
+          </Text>
+          {s.showTransliteration && (
+            <Text style={{ fontStyle: 'italic', color: colors.primary, fontSize: translationSize - 1 }}>
+              Bismi Allāhi ar-Raḥmāni ar-Raḥīm
+            </Text>
+          )}
+          {s.showTranslation && (
+            <Text style={{ color: colors.text, fontSize: translationSize, marginTop: 6 }}>
+              Au nom d&apos;Allah, le Tout Miséricordieux, le Très Miséricordieux.
+            </Text>
+          )}
         </View>
 
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Ionicons name="information-circle" size={20} color="#D4AF37" />
-            <Text style={styles.sectionTitle}>À propos</Text>
+        <SectionTitle style={styles.sectionGap}>Apparence</SectionTitle>
+        <Group>
+          <View style={styles.rowPad}>
+            <Segmented<ThemeMode>
+              value={s.themeMode}
+              onChange={s.setThemeMode}
+              options={[
+                { value: 'system', label: 'Auto' },
+                { value: 'light', label: 'Clair' },
+                { value: 'dark', label: 'Sombre' },
+              ]}
+            />
           </View>
+        </Group>
 
-          <View style={styles.aboutContainer}>
-            <View style={styles.appInfo}>
-              <Text style={styles.appName}>Quran Al Karim</Text>
-              <Text style={styles.appVersion}>Version 1.0.0</Text>
-              <Text style={styles.appDescription}>
-                Application mobile pour la lecture et l'écoute du Saint Coran avec traductions et commentaires.
-              </Text>
-              <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8 }}>
-                <Text style={styles.appVersion}>Created with <Ionicons name="heart" size={14} color="#D32F2F" style={{ marginHorizontal: 4 }} /> by Idrissa Ndiouck - For The Love of the Holy Quran</Text>
-              </View>
-            </View>
+        <SectionTitle style={styles.sectionGap}>Lecture</SectionTitle>
+        <Group>
+          <Stepper
+            icon="text"
+            title="Taille de l'arabe"
+            value={arabicSize}
+            onMinus={() => s.setArabicSizeIndex(s.arabicSizeIndex - 1)}
+            onPlus={() => s.setArabicSizeIndex(s.arabicSizeIndex + 1)}
+          />
+          <Stepper
+            icon="language-outline"
+            title="Taille de la traduction"
+            value={translationSize}
+            onMinus={() => s.setTranslationSizeIndex(s.translationSizeIndex - 1)}
+            onPlus={() => s.setTranslationSizeIndex(s.translationSizeIndex + 1)}
+          />
+          <Toggle
+            icon="chatbox-ellipses-outline"
+            title="Phonétique"
+            subtitle="Lire l'arabe en lettres latines"
+            value={s.showTransliteration}
+            onChange={s.toggleTransliteration}
+          />
+          <Toggle
+            icon="reader-outline"
+            title="Traduction française"
+            subtitle="Hamidullah"
+            value={s.showTranslation}
+            onChange={s.toggleTranslation}
+            last
+          />
+        </Group>
 
-            <View style={styles.linksContainer}>
-              <TouchableOpacity style={styles.linkItem}>
-                <Ionicons name="star" size={16} color="#1B5E20" />
-                <Text style={styles.linkText}>Évaluer l'application</Text>
-              </TouchableOpacity>
+        <SectionTitle style={styles.sectionGap}>Écoute</SectionTitle>
+        <Group>
+          <Link
+            icon="mic-outline"
+            title="Récitateur"
+            subtitle={reciter?.name}
+            onPress={() => router.push('/hafiz')}
+          />
+          <Link
+            icon="bookmark-outline"
+            title="Mes favoris"
+            subtitle={`${bookmarksCount} verset${bookmarksCount > 1 ? 's' : ''}`}
+            onPress={() => router.push('/bookmarks')}
+            last
+          />
+        </Group>
 
-              <TouchableOpacity style={styles.linkItem}>
-                <Ionicons name="help-circle" size={16} color="#1B5E20" />
-                <Text style={styles.linkText}>Aide et support</Text>
-              </TouchableOpacity>
+        <SectionTitle style={styles.sectionGap}>Calendrier</SectionTitle>
+        <Group>
+          <Stepper
+            icon="moon-outline"
+            title="Ajustement hégirien"
+            subtitle={formatHijri(toHijri(new Date(), s.hijriOffset))}
+            value={s.hijriOffset > 0 ? `+${s.hijriOffset}` : String(s.hijriOffset)}
+            onMinus={() => s.setHijriOffset(s.hijriOffset - 1)}
+            onPlus={() => s.setHijriOffset(s.hijriOffset + 1)}
+            last
+          />
+        </Group>
 
-              <TouchableOpacity style={styles.linkItem}>
-                <Ionicons name="document-text" size={16} color="#1B5E20" />
-                <Text style={styles.linkText}>Conditions d'utilisation</Text>
-              </TouchableOpacity>
+        <SectionTitle style={styles.sectionGap}>Données</SectionTitle>
+        <Group>
+          <Link icon="trash-outline" title="Vider le cache" subtitle="Conserve favoris et progression" onPress={clearCache} />
+          <Link icon="refresh-outline" title="Tout réinitialiser" onPress={resetAll} danger last />
+        </Group>
 
-              <TouchableOpacity style={styles.linkItem}>
-                <Ionicons name="shield-checkmark" size={16} color="#1B5E20" />
-                <Text style={styles.linkText}>Politique de confidentialité</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
+        <Text style={[Type.caption, { color: colors.textSubtle, textAlign: 'center', marginTop: Spacing.xxl }]}>
+          Coran · Tafsir en wolof — version 1.0.0
+        </Text>
+      </View>
+    </ScrollView>
+  );
+}
+
+function Group({ children }: { children: React.ReactNode }) {
+  const { colors } = useAppTheme();
+  return (
+    <View style={[styles.group, { backgroundColor: colors.surface, borderColor: colors.border }]}>{children}</View>
+  );
+}
+
+function RowShell({
+  icon,
+  title,
+  subtitle,
+  right,
+  last,
+  danger,
+}: {
+  icon: IconName;
+  title: string;
+  subtitle?: string;
+  right?: React.ReactNode;
+  last?: boolean;
+  danger?: boolean;
+}) {
+  const { colors } = useAppTheme();
+  const tint = danger ? colors.danger : colors.primary;
+  return (
+    <View style={[styles.row, !last && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }]}>
+      <View style={[styles.rowIcon, { backgroundColor: danger ? 'transparent' : colors.primarySoft }]}>
+        <Ionicons name={icon} size={18} color={tint} />
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={[Type.callout, { color: danger ? colors.danger : colors.text }]}>{title}</Text>
+        {!!subtitle && <Text style={[Type.caption, { color: colors.textMuted }]}>{subtitle}</Text>}
+      </View>
+      {right}
+    </View>
+  );
+}
+
+function Toggle(props: {
+  icon: IconName;
+  title: string;
+  subtitle?: string;
+  value: boolean;
+  onChange: () => void;
+  last?: boolean;
+}) {
+  const { colors } = useAppTheme();
+  return (
+    <RowShell
+      {...props}
+      right={
+        <Switch
+          value={props.value}
+          onValueChange={props.onChange}
+          trackColor={{ true: colors.primary, false: colors.surfaceAlt }}
+          thumbColor="#fff"
+        />
+      }
+    />
+  );
+}
+
+function Stepper(props: {
+  icon: IconName;
+  title: string;
+  subtitle?: string;
+  value: number | string;
+  onMinus: () => void;
+  onPlus: () => void;
+  last?: boolean;
+}) {
+  const { colors } = useAppTheme();
+  return (
+    <RowShell
+      {...props}
+      right={
+        <View style={styles.stepper}>
+          <IconButton icon="remove" label="Diminuer" size={18} filled onPress={props.onMinus} />
+          <Text style={[Type.headline, { color: colors.text, minWidth: 34, textAlign: 'center' }]}>{props.value}</Text>
+          <IconButton icon="add" label="Augmenter" size={18} filled onPress={props.onPlus} />
         </View>
-      </ScrollView>
-    </SafeAreaView>
+      }
+    />
+  );
+}
+
+function Link(props: {
+  icon: IconName;
+  title: string;
+  subtitle?: string;
+  onPress: () => void;
+  last?: boolean;
+  danger?: boolean;
+}) {
+  const { colors } = useAppTheme();
+  return (
+    <Tap onPress={props.onPress} accessibilityRole="button">
+      <RowShell {...props} right={<Ionicons name="chevron-forward" size={18} color={colors.textSubtle} />} />
+    </Tap>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F8F6F0',
-  },
-  header: {
-    paddingHorizontal: 20,
-    paddingVertical: 20,
-    borderBottomLeftRadius: 24,
-    borderBottomRightRadius: 24,
-  },
-  headerContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  headerText: {
-    marginLeft: 16,
-    flex: 1,
-  },
-  headerTitle: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
-    fontFamily: 'serif',
-  },
-  headerSubtitle: {
-    fontSize: 14,
-    color: '#A5D6A7',
-    marginTop: 4,
-  },
-  content: {
-    flex: 1,
-  },
-  section: {
-    marginTop: 24,
-    paddingHorizontal: 20,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#1B5E20',
-    marginLeft: 8,
-    fontFamily: 'serif',
-  },
-  settingsGroup: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  settingItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F0F0F0',
-  },
-  actionItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F0F0F0',
-  },
-  settingIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#F8F6F0',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-  settingContent: {
-    flex: 1,
-  },
-  settingTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-  },
-  settingSubtitle: {
-    fontSize: 13,
-    color: '#666',
-    marginTop: 2,
-  },
-  settingControl: {
-    marginLeft: 12,
-  },
-  optionButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F8F6F0',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-  },
-  optionText: {
-    fontSize: 14,
-    color: '#1B5E20',
-    fontWeight: '600',
-    marginRight: 6,
-  },
-  aboutContainer: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 20,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  appInfo: {
-    alignItems: 'center',
-    marginBottom: 24,
-  },
-  appName: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#1B5E20',
-    fontFamily: 'serif',
-  },
-  appVersion: {
-    fontSize: 14,
-    color: '#666',
-    marginTop: 4,
-  },
-  appDescription: {
-    fontSize: 14,
-    color: '#888',
-    textAlign: 'center',
-    lineHeight: 20,
-    marginTop: 12,
-  },
-  linksContainer: {
-    borderTopWidth: 1,
-    borderTopColor: '#F0F0F0',
-    paddingTop: 16,
-  },
-  linkItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-  },
-  linkText: {
-    fontSize: 14,
-    color: '#1B5E20',
-    marginLeft: 12,
-    fontWeight: '500',
-  },
+  pad: { paddingHorizontal: Spacing.xl },
+  sectionGap: { marginTop: Spacing.xxl },
+  preview: { borderRadius: Radius.lg, padding: Spacing.lg, borderWidth: StyleSheet.hairlineWidth },
+  group: { borderRadius: Radius.lg, borderWidth: StyleSheet.hairlineWidth, overflow: 'hidden' },
+  rowPad: { padding: Spacing.md },
+  row: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md, gap: Spacing.md },
+  rowIcon: { width: 32, height: 32, borderRadius: Radius.sm, alignItems: 'center', justifyContent: 'center' },
+  stepper: { flexDirection: 'row', alignItems: 'center', gap: 4 },
 });

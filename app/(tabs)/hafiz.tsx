@@ -1,655 +1,260 @@
-import React, { useState, useMemo } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  TextInput,
-  Alert,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import React, { useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, FlatList, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useFocusEffect } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
-import { useReciterStore, Reciter } from '@/stores/reciterStore';
+import { setAudioModeAsync, useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
 
-export default function HafizScreen() {
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState('all');
+import { popularReciters, Reciter, useReciterStore } from '@/stores/reciterStore';
+import { recitationService } from '@/services/recitationService';
+import { useAppTheme } from '@/hooks/useAppTheme';
+import { ArabicFonts, Radius, Spacing, Type } from '@/constants/theme';
+import { Chip, IconButton, Tap } from '@/components/ui/kit';
 
-  const {
-    reciters,
-    selectedReciter,
-    setSelectedReciter,
-    addToFavorites,
-    removeFromFavorites,
-    isFavorite,
-  } = useReciterStore();
+type Filter = 'all' | 'senegal' | 'learning' | 'sync' | 'favorites';
 
-  const filteredReciters = reciters.filter(reciter => {
-    const matchesSearch = reciter.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         reciter.nameArabic.includes(searchQuery) ||
-                         reciter.country.toLowerCase().includes(searchQuery.toLowerCase());
+const FILTERS: { id: Filter; label: string }[] = [
+  { id: 'all', label: 'Tous' },
+  { id: 'senegal', label: 'Sénégal' },
+  { id: 'learning', label: 'Pour apprendre' },
+  { id: 'sync', label: 'Mot à mot' },
+  { id: 'favorites', label: 'Favoris' },
+];
 
-    const matchesCategory = selectedCategory === 'all' ||
-                           (selectedCategory === 'featured' && reciter.featured) ||
-                           (selectedCategory === 'favorites' && isFavorite(reciter.id));
+const normalize = (s: string) =>
+  (s || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ'’\-\s]/g, '');
 
-    return matchesSearch && matchesCategory;
-  });
+// Extrait d'écoute : Al-Fatiha, verset 2
+const SAMPLE = { surah: 1, ayah: 2, global: 2 };
 
-  const handleReciterSelect = (reciter: Reciter) => {
-    setSelectedReciter(reciter);
-    Alert.alert(
-      'Récitateur sélectionné',
-      `${reciter.name} est maintenant votre récitateur par défaut.`,
-      [{ text: 'OK' }]
-    );
-  };
+export default function RecitersScreen() {
+  const { colors } = useAppTheme();
+  const insets = useSafeAreaInsets();
+  const selected = useReciterStore((s) => s.getSelectedReciter());
+  const setSelected = useReciterStore((s) => s.setSelectedReciter);
+  const favorites = useReciterStore((s) => s.favoriteReciters);
+  const toggleFavorite = useReciterStore((s) => s.toggleFavorite);
 
-  const handleToggleFavorite = (reciter: Reciter) => {
-    if (isFavorite(reciter.id)) {
-      removeFromFavorites(reciter.id);
-    } else {
-      addToFavorites(reciter.id);
+  const [query, setQuery] = useState('');
+  const [filter, setFilter] = useState<Filter>('all');
+  const [previewId, setPreviewId] = useState<number | null>(null);
+
+  const player = useAudioPlayer(null, { updateInterval: 250 });
+  const status = useAudioPlayerStatus(player);
+
+  useEffect(() => {
+    setAudioModeAsync({ playsInSilentMode: true }).catch(() => {});
+  }, []);
+
+  // Coupe l'extrait en quittant l'onglet
+  useFocusEffect(
+    React.useCallback(
+      () => () => {
+        player.pause();
+        setPreviewId(null);
+      },
+      [player]
+    )
+  );
+
+  useEffect(() => {
+    if (status.didJustFinish) setPreviewId(null);
+  }, [status.didJustFinish]);
+
+  const preview = async (r: Reciter) => {
+    if (previewId === r.id) {
+      player.pause();
+      setPreviewId(null);
+      return;
+    }
+    setPreviewId(r.id);
+    try {
+      // Récitateur par sourate entière : extrait = Al-Fatiha complète (≈ 45 s)
+      const url =
+        recitationService.surahAudioUrl(r, 1) ??
+        (await recitationService.getVerseAudio(r, SAMPLE.surah, SAMPLE.ayah, SAMPLE.global)).url;
+      player.replace({ uri: url });
+      player.play();
+    } catch {
+      setPreviewId(null);
     }
   };
 
-  const categories = [
-    { id: 'all', name: 'Tous', icon: 'library' },
-    { id: 'featured', name: 'Populaires', icon: 'star' },
-    { id: 'favorites', name: 'Favoris', icon: 'heart' },
-  ];
+  const list = useMemo(() => {
+    const q = normalize(query);
+    return popularReciters.filter((r) => {
+      if (q && !normalize(r.name).includes(q) && !r.nameArabic.includes(query) && !normalize(r.country).includes(q)) return false;
+      if (filter === 'senegal') return r.country === 'Sénégal';
+      if (filter === 'learning') return !!r.learning;
+      if (filter === 'sync') return !!r.quranComId;
+      if (filter === 'favorites') return favorites.includes(r.id);
+      return true;
+    });
+  }, [query, filter, favorites]);
 
-  const renderReciterCard = (reciter: Reciter) => {
-    const isSelected = selectedReciter?.id === reciter.id;
-    const isReciterFavorite = isFavorite(reciter.id);
+  const header = (
+    <View>
+      <View style={styles.pad}>
+        <Text style={[Type.largeTitle, { color: colors.text }]}>Récitateurs</Text>
+        <Text style={[Type.body, { color: colors.textMuted }]}>Choisissez la voix qui vous accompagne</Text>
+      </View>
 
-    // Vérification des données du récitateur
-    if (!reciter || !reciter.name || !reciter.id) {
-      return null;
-    }
+      {/* Voix actuelle */}
+      <View style={[styles.current, { backgroundColor: colors.primaryStrong }]}>
+        <View style={styles.avatarLg}>
+          <Ionicons name="mic" size={24} color="#0B3D2E" />
+        </View>
+        <View style={{ flex: 1, marginLeft: Spacing.md }}>
+          <Text style={styles.currentOverline}>VOIX ACTUELLE</Text>
+          <Text style={styles.currentName} numberOfLines={2}>
+            {selected.name}
+          </Text>
+          <Text style={styles.currentSub}>
+            {selected.country}
+            {selected.quranComId ? ' · mot à mot synchronisé' : selected.surahAudioBase ? ' · sourates entières' : ''}
+          </Text>
+        </View>
+      </View>
 
-    // Styles pour la carte
-    const getTextStyle = (baseStyle: any, selectedStyle: any, featuredStyle: any, normalStyle: any) => {
-      if (isSelected) return [baseStyle, selectedStyle];
-      if (reciter.featured) return [baseStyle, featuredStyle];
-      return [baseStyle, normalStyle];
-    };
+      <View style={[styles.search, { backgroundColor: colors.surfaceAlt }]}>
+        <Ionicons name="search" size={18} color={colors.textSubtle} />
+        <TextInput
+          value={query}
+          onChangeText={setQuery}
+          placeholder="Nom ou pays…"
+          placeholderTextColor={colors.textSubtle}
+          style={[Type.body, { flex: 1, color: colors.text, marginLeft: Spacing.sm }]}
+          autoCorrect={false}
+        />
+      </View>
 
-    const gradientColors: [string, string] = isSelected
-      ? ['#4CAF50', '#66BB6A']
-      : reciter.featured
-        ? ['#1B5E20', '#2E7D32']
-        : ['#F5F5F5', '#FFFFFF'];
-
-    const iconColor = isSelected
-      ? '#E8F5E8'
-      : reciter.featured
-        ? '#A5D6A7'
-        : '#666';
-
-    return (
-      <TouchableOpacity
-        key={`reciter-${reciter.id}-${isSelected ? 'selected' : 'unselected'}`}
-        style={[styles.reciterCard, isSelected && styles.selectedCard]}
-        onPress={() => handleReciterSelect(reciter)}
-      >
-        <LinearGradient
-          colors={gradientColors}
-          style={styles.cardGradient}
-        >
-          <View style={styles.cardContent}>
-            <View style={styles.reciterInfo}>
-              <View style={styles.reciterHeader}>
-                <Text style={getTextStyle(
-                  styles.reciterName,
-                  styles.selectedNameText,
-                  styles.featuredText,
-                  styles.normalText
-                )}>
-                  {reciter.name}
-                </Text>
-                {isSelected && (
-                  <View style={styles.selectedBadge}>
-                    <Ionicons name="checkmark-circle" size={14} color="#FFFFFF" />
-                    <Text style={styles.selectedText}>Sélectionné</Text>
-                  </View>
-                )}
-              </View>
-              <Text style={getTextStyle(
-                styles.reciterNameArabic,
-                styles.selectedArabicText,
-                styles.featuredArabicText,
-                styles.normalArabicText
-              )}>
-                {reciter.nameArabic}
-              </Text>
-              <View style={styles.locationContainer}>
-                <Ionicons
-                  name="location"
-                  size={14}
-                  color={iconColor}
-                />
-                <Text style={getTextStyle(
-                  styles.country,
-                  styles.selectedCountryText,
-                  styles.featuredCountryText,
-                  styles.normalCountryText
-                )}>
-                  {reciter.country}
-                </Text>
-                {reciter.style && (
-                  <>
-                    <Text style={getTextStyle(
-                      styles.country,
-                      styles.selectedCountryText,
-                      styles.featuredCountryText,
-                      styles.normalCountryText
-                    )}> • </Text>
-                    <Text style={getTextStyle(
-                      styles.country,
-                      styles.selectedCountryText,
-                      styles.featuredCountryText,
-                      styles.normalCountryText
-                    )}>
-                      {reciter.style}
-                    </Text>
-                  </>
-                )}
-              </View>
-              <Text style={getTextStyle(
-                styles.description,
-                styles.selectedDescriptionText,
-                styles.featuredDescriptionText,
-                styles.normalDescriptionText
-              )}>
-                {reciter.description}
-              </Text>
-            </View>
-
-            <View style={styles.cardActions}>
-              <TouchableOpacity
-                style={[
-                  styles.playButton,
-                  reciter.featured && styles.featuredPlayButton
-                ]}
-                onPress={() => handleReciterSelect(reciter)}
-              >
-                <Ionicons
-                  name={isSelected ? "checkmark" : "play"}
-                  size={20}
-                  color={reciter.featured ? '#1B5E20' : '#FFFFFF'}
-                />
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.favoriteButton}
-                onPress={() => handleToggleFavorite(reciter)}
-              >
-                <Ionicons
-                  name={isReciterFavorite ? "heart" : "heart-outline"}
-                  size={18}
-                  color={isReciterFavorite ? "#E91E63" : (reciter.featured ? '#D4AF37' : '#666')}
-                />
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {reciter.featured && (
-            <View style={styles.featuredBadge}>
-              <Ionicons name="star" size={12} color="#D4AF37" />
-              <Text style={styles.featuredBadgeText}>Populaire</Text>
-            </View>
-          )}
-        </LinearGradient>
-      </TouchableOpacity>
-    );
-  };
+      <FlatList
+        horizontal
+        data={FILTERS}
+        keyExtractor={(f) => f.id}
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{ gap: Spacing.sm, paddingHorizontal: Spacing.xl, paddingVertical: Spacing.md }}
+        renderItem={({ item }) => <Chip label={item.label} active={filter === item.id} onPress={() => setFilter(item.id)} />}
+      />
+    </View>
+  );
 
   return (
-    <SafeAreaView style={styles.container}>
-      <LinearGradient
-        colors={['#1B5E20', '#2E7D32', '#1B5E20']}
-        style={styles.header}
-      >
-        <View style={styles.headerContent}>
-          <Ionicons name="person-circle" size={40} color="#D4AF37" />
-          <View style={styles.headerText}>
-            <Text style={styles.headerTitle}>Récitateurs du Coran</Text>
-            <Text style={styles.headerSubtitle}>Les plus grandes voix de l'Islam</Text>
-          </View>
-        </View>
-
-        <View style={styles.searchContainer}>
-          <Ionicons name="search" size={20} color="#666" />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Rechercher un récitateur..."
-            placeholderTextColor="#666"
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-          />
-        </View>
-      </LinearGradient>
-
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {selectedReciter && (
-          <View style={styles.currentReciterSection}>
-            <View style={styles.sectionHeader}>
-              <Ionicons name="checkmark-circle" size={20} color="#4CAF50" />
-              <Text style={styles.sectionTitle}>Récitateur Actuel</Text>
-            </View>
-            <View style={styles.currentReciterCard}>
-              <Text style={styles.currentReciterName}>{selectedReciter.name}</Text>
-              <Text style={styles.currentReciterArabic}>{selectedReciter.nameArabic}</Text>
-              <Text style={styles.currentReciterCountry}>{selectedReciter.country}</Text>
-            </View>
-          </View>
-        )}
-
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={styles.categoriesContainer}
-          contentContainerStyle={styles.categoriesContent}
-        >
-          {categories.map((category) => (
-            <TouchableOpacity
-              key={category.id}
-              style={[
-                styles.categoryButton,
-                selectedCategory === category.id && styles.activeCategoryButton
-              ]}
-              onPress={() => setSelectedCategory(category.id)}
+    <FlatList
+      style={{ flex: 1, backgroundColor: colors.background }}
+      contentContainerStyle={{ paddingTop: insets.top + Spacing.xl, paddingBottom: Spacing.xxxl }}
+      data={list}
+      keyExtractor={(r) => String(r.id)}
+      ListHeaderComponent={header}
+      ListEmptyComponent={
+        <Text style={[Type.callout, { color: colors.textMuted, textAlign: 'center', padding: Spacing.xxl }]}>
+          {filter === 'favorites' ? 'Touchez le cœur d’un récitateur pour l’ajouter ici.' : 'Aucun récitateur trouvé.'}
+        </Text>
+      }
+      renderItem={({ item }) => {
+        const isSelected = item.id === selected.id;
+        const fav = favorites.includes(item.id);
+        const previewing = previewId === item.id;
+        const loadingPreview = previewing && !status.playing;
+        return (
+          <Tap
+            onPress={() => setSelected(item)}
+            accessibilityRole="radio"
+            accessibilityState={{ selected: isSelected }}
+            style={[
+              styles.row,
+              {
+                backgroundColor: isSelected ? colors.primarySoft : colors.surface,
+                borderColor: isSelected ? colors.primary : colors.border,
+              },
+            ]}
+          >
+            <Tap
+              haptic
+              onPress={() => preview(item)}
+              accessibilityLabel={previewing ? 'Arrêter l’extrait' : `Écouter un extrait de ${item.name}`}
+              style={[styles.previewBtn, { backgroundColor: previewing ? colors.gold : colors.surfaceAlt }]}
             >
-              <Ionicons
-                name={category.icon as any}
-                size={16}
-                color={selectedCategory === category.id ? '#FFFFFF' : '#1B5E20'}
-              />
-              <Text style={[
-                styles.categoryButtonText,
-                selectedCategory === category.id && styles.activeCategoryButtonText
-              ]}>
-                {category.name}
+              {loadingPreview ? (
+                <ActivityIndicator size="small" color={colors.onPrimary} />
+              ) : (
+                <Ionicons name={previewing ? 'stop' : 'play'} size={18} color={previewing ? '#fff' : colors.primary} />
+              )}
+            </Tap>
+            <View style={{ flex: 1, marginLeft: Spacing.md }}>
+              <Text style={[Type.headline, { color: colors.text }]} numberOfLines={1}>
+                {item.name}
               </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-
-        <View style={styles.sectionHeader}>
-          <Ionicons name="person-circle" size={20} color="#D4AF37" />
-          <Text style={styles.sectionTitle}>
-            {selectedCategory === 'all' ? 'Tous les Récitateurs' :
-             selectedCategory === 'featured' ? 'Récitateurs Populaires' :
-             selectedCategory === 'favorites' ? 'Mes Favoris' : 'Récitateurs'}
-          </Text>
-          <Text style={styles.resultCount}>({filteredReciters.length})</Text>
-        </View>
-
-        <View style={styles.recitersList}>
-          {filteredReciters.map(renderReciterCard)}
-        </View>
-
-        {filteredReciters.length === 0 && (
-          <View style={styles.emptyContainer}>
-            <Ionicons name="person-outline" size={48} color="#ccc" />
-            <Text style={styles.emptyText}>Aucun récitateur trouvé</Text>
-            <Text style={styles.emptySubtext}>
-              Essayez de modifier vos critères de recherche
-            </Text>
-          </View>
-        )}
-      </ScrollView>
-    </SafeAreaView>
+              <Text style={{ fontFamily: ArabicFonts.regular, fontSize: 17, color: colors.textMuted, textAlign: 'left' }} numberOfLines={1}>
+                {item.nameArabic}
+              </Text>
+              <Text style={[Type.caption, { color: colors.textMuted }]} numberOfLines={2}>
+                {item.description}
+              </Text>
+              <View style={styles.tags}>
+                <Text style={[styles.tag, { color: colors.textMuted, backgroundColor: colors.surfaceAlt }]}>{item.country}</Text>
+                {item.learning && <Text style={[styles.tag, { color: colors.gold, backgroundColor: colors.goldSoft }]}>Pour apprendre</Text>}
+                {!!item.surahAudioBase && <Text style={[styles.tag, { color: colors.textMuted, backgroundColor: colors.surfaceAlt }]}>Sourate entière</Text>}
+                {!!item.quranComId && <Text style={[styles.tag, { color: colors.primary, backgroundColor: colors.primarySoft }]}>Mot à mot</Text>}
+              </View>
+            </View>
+            <View style={{ alignItems: 'center' }}>
+              <IconButton
+                icon={fav ? 'heart' : 'heart-outline'}
+                color={fav ? colors.gold : colors.textSubtle}
+                label={fav ? 'Retirer des favoris' : 'Ajouter aux favoris'}
+                onPress={() => toggleFavorite(item.id)}
+              />
+              <Ionicons
+                name={isSelected ? 'checkmark-circle' : 'ellipse-outline'}
+                size={24}
+                color={isSelected ? colors.primary : colors.border}
+                style={{ marginTop: Spacing.xs }}
+              />
+            </View>
+          </Tap>
+        );
+      }}
+    />
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F8F6F0',
-  },
-  header: {
-    paddingHorizontal: 20,
-    paddingVertical: 20,
-    borderBottomLeftRadius: 24,
-    borderBottomRightRadius: 24,
-  },
-  headerContent: {
+  pad: { paddingHorizontal: Spacing.xl },
+  current: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 20,
+    marginHorizontal: Spacing.xl,
+    marginTop: Spacing.lg,
+    borderRadius: Radius.xl,
+    padding: Spacing.lg,
   },
-  headerText: {
-    marginLeft: 16,
-    flex: 1,
-  },
-  headerTitle: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
-    fontFamily: 'serif',
-  },
-  headerSubtitle: {
-    fontSize: 14,
-    color: '#A5D6A7',
-    marginTop: 4,
-  },
-  searchContainer: {
+  avatarLg: { width: 52, height: 52, borderRadius: 26, backgroundColor: '#E9D49A', alignItems: 'center', justifyContent: 'center' },
+  currentOverline: { color: '#E9D49A', fontSize: 11, fontWeight: '700', letterSpacing: 1.1 },
+  currentName: { color: '#fff', fontSize: 18, fontWeight: '700', marginTop: 2 },
+  currentSub: { color: 'rgba(255,255,255,0.75)', fontSize: 13, marginTop: 2 },
+  search: {
+    marginHorizontal: Spacing.xl,
+    marginTop: Spacing.lg,
+    height: 46,
+    borderRadius: Radius.md,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    marginTop: 8,
+    paddingHorizontal: Spacing.md,
   },
-  searchInput: {
-    flex: 1,
-    marginLeft: 12,
-    fontSize: 16,
-    color: '#333',
-    paddingVertical: 8,
-  },
-  content: {
-    flex: 1,
-    paddingHorizontal: 20,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 24,
-    marginBottom: 16,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#1B5E20',
-    marginLeft: 8,
-    fontFamily: 'serif',
-  },
-  recitersList: {
-    marginBottom: 24,
-  },
-  reciterCard: {
-    marginBottom: 16,
-    borderRadius: 16,
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 6,
-  },
-  cardGradient: {
-    position: 'relative',
-  },
-  cardContent: {
-    flexDirection: 'row',
-    padding: 16,
-  },
-  reciterInfo: {
-    flex: 1,
-  },
-  reciterName: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 4,
-    flex: 1,
-    flexWrap: 'wrap',
-  },
-  featuredText: {
-    color: '#FFFFFF',
-  },
-  reciterNameArabic: {
-    fontSize: 18,
-    color: '#666',
-    fontFamily: 'NotoSansArabic-Bold',
-    textAlign: 'right',
-    marginBottom: 8,
-  },
-  featuredArabicText: {
-    color: '#E8F5E8',
-  },
-  locationContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  country: {
-    fontSize: 12,
-    color: '#666',
-    marginLeft: 4,
-  },
-  featuredCountryText: {
-    color: '#A5D6A7',
-  },
-  description: {
-    fontSize: 13,
-    color: '#888',
-    lineHeight: 18,
-  },
-  featuredDescriptionText: {
-    color: '#C8E6C9',
-  },
-  cardActions: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingLeft: 12,
-  },
-  playButton: {
-    backgroundColor: '#1B5E20',
-    borderRadius: 24,
-    padding: 12,
-    marginBottom: 8,
-  },
-  featuredPlayButton: {
-    backgroundColor: '#D4AF37',
-  },
-  favoriteButton: {
-    padding: 8,
-  },
-  featuredBadge: {
-    position: 'absolute',
-    top: 12,
-    right: 12,
-    backgroundColor: 'rgba(212, 175, 55, 0.2)',
-    borderRadius: 12,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  featuredBadgeText: {
-    fontSize: 10,
-    color: '#D4AF37',
-    marginLeft: 4,
-    fontWeight: 'bold',
-  },
-  categoriesSection: {
-    marginBottom: 24,
-  },
-  categoriesGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    marginTop: 16,
-  },
-  categoryCard: {
-    width: '48%',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 16,
-    alignItems: 'center',
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#E8DCC0',
-    shadowColor: '#D4AF37',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  categoryText: {
-    fontSize: 12,
-    color: '#1B5E20',
-    marginTop: 8,
-    fontWeight: '600',
-    textAlign: 'center',
-  },
-  // Nouveaux styles
-  selectedCard: {
-    borderWidth: 2,
-    borderColor: '#4CAF50',
-  },
-  reciterHeader: {
+  row: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-    minHeight: 24,
-  },
-  selectedBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    borderRadius: 12,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    marginLeft: 8,
-    flexShrink: 0,
-  },
-  selectedText: {
-    fontSize: 12,
-    color: '#FFFFFF',
-    marginLeft: 2,
-    fontWeight: 'bold',
-  },
-  currentReciterSection: {
-    marginBottom: 24,
-  },
-  currentReciterCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 16,
-    marginHorizontal: 4,
+    marginHorizontal: Spacing.xl,
+    marginBottom: Spacing.md,
+    padding: Spacing.md,
+    borderRadius: Radius.lg,
     borderWidth: 1,
-    borderColor: '#4CAF50',
-    shadowColor: '#4CAF50',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 4,
   },
-  currentReciterName: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#1B5E20',
-    textAlign: 'center',
-  },
-  currentReciterArabic: {
-    fontSize: 18,
-    color: '#4CAF50',
-    fontFamily: 'NotoSansArabic-Bold',
-    textAlign: 'center',
-    marginTop: 4,
-  },
-  currentReciterCountry: {
-    fontSize: 14,
-    color: '#666',
-    textAlign: 'center',
-    marginTop: 4,
-  },
-  categoriesContainer: {
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  categoriesContent: {
-    paddingHorizontal: 4,
-    paddingRight: 40,
-  },
-  categoryButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    marginRight: 12,
-    borderWidth: 1,
-    borderColor: '#E8DCC0',
-  },
-  activeCategoryButton: {
-    backgroundColor: '#1B5E20',
-    borderColor: '#1B5E20',
-  },
-  categoryButtonText: {
-    fontSize: 14,
-    color: '#1B5E20',
-    marginLeft: 6,
-    fontWeight: '600',
-  },
-  activeCategoryButtonText: {
-    color: '#FFFFFF',
-  },
-  resultCount: {
-    fontSize: 14,
-    color: '#666',
-    marginLeft: 4,
-  },
-  emptyContainer: {
-    alignItems: 'center',
-    paddingVertical: 48,
-    paddingHorizontal: 20,
-  },
-  emptyText: {
-    fontSize: 18,
-    color: '#666',
-    marginTop: 16,
-    fontWeight: '600',
-  },
-  emptySubtext: {
-    fontSize: 14,
-    color: '#888',
-    marginTop: 8,
-    textAlign: 'center',
-  },
-  // Styles pour les récitateurs sélectionnés
-  selectedNameText: {
-    color: '#FFFFFF',
-  },
-  selectedArabicText: {
-    color: '#E8F5E8',
-  },
-  selectedCountryText: {
-    color: '#E8F5E8',
-  },
-  selectedDescriptionText: {
-    color: '#F1F8E9',
-  },
-  // Styles pour les récitateurs normaux (non-featured, non-selected)
-  normalText: {
-    color: '#333',
-  },
-  normalArabicText: {
-    color: '#666',
-  },
-  normalCountryText: {
-    color: '#666',
-  },
-  normalDescriptionText: {
-    color: '#888',
-  },
+  previewBtn: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', marginTop: 2 },
+  tags: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 },
+  tag: { fontSize: 11, fontWeight: '700', paddingHorizontal: 8, paddingVertical: 3, borderRadius: Radius.pill, overflow: 'hidden' },
 });

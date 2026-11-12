@@ -1,63 +1,47 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import NetInfo from '@react-native-community/netinfo';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useAppTheme } from '@/hooks/useAppTheme';
+import { Radius, Spacing, Type } from '@/constants/theme';
 
-interface OfflineBannerProps {
-  onRetry?: () => void;
-}
+/** Pastille discrète affichée par-dessus l'écran quand Internet est coupé. */
+export function OfflineBanner() {
+  const { colors } = useAppTheme();
+  const insets = useSafeAreaInsets();
+  const [offline, setOffline] = useState(false);
 
-export const OfflineBanner: React.FC<OfflineBannerProps> = ({ onRetry }) => {
-  const [isOffline, setIsOffline] = useState(false);
+  useEffect(
+    () =>
+      NetInfo.addEventListener((state) => {
+        // isInternetReachable vaut null tant qu'il n'est pas connu : ce n'est pas « hors ligne »
+        setOffline(state.isConnected === false || state.isInternetReachable === false);
+      }),
+    []
+  );
 
-  useEffect(() => {
-    const unsubscribe = NetInfo.addEventListener(state => {
-      setIsOffline(!state.isConnected || !state.isInternetReachable);
-    });
-
-    return unsubscribe;
-  }, []);
-
-  if (!isOffline) {
-    return null;
-  }
+  if (!offline) return null;
 
   return (
-    <View style={styles.container}>
-      <View style={styles.content}>
-        <Ionicons name="cloud-offline" size={20} color="#fff" />
-        <Text style={styles.text}>Mode hors ligne</Text>
+    <View pointerEvents="none" style={[styles.wrap, { top: insets.top + Spacing.xs }]}>
+      <View style={[styles.pill, { backgroundColor: colors.text }]} accessibilityLiveRegion="polite">
+        <Ionicons name="cloud-offline-outline" size={16} color={colors.background} />
+        <Text style={[Type.caption, { color: colors.background, marginLeft: 6, fontWeight: '600' }]}>
+          Hors ligne · contenus déjà chargés disponibles
+        </Text>
       </View>
-      {onRetry && (
-        <TouchableOpacity style={styles.retryButton} onPress={onRetry}>
-          <Ionicons name="refresh" size={16} color="#fff" />
-        </TouchableOpacity>
-      )}
     </View>
   );
-};
+}
 
 const styles = StyleSheet.create({
-  container: {
-    backgroundColor: '#f39c12',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+  wrap: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
+  pill: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  content: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  text: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '500',
-    marginLeft: 8,
-  },
-  retryButton: {
-    padding: 4,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 6,
+    borderRadius: Radius.pill,
   },
 });

@@ -1,348 +1,317 @@
-import React, { useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  Dimensions,
-  StatusBar,
-  ImageBackground,
-} from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { ImageBackground, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { prayerTimesService, PrayerTime } from '@/services/prayerTimesService';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-const { width } = Dimensions.get('window');
+import { prayerTimesService, DailyPrayerTimes } from '@/services/prayerTimesService';
+import { quranApi } from '@/services/api';
+import { Verse } from '@/stores/quranStore';
+import { useProgressStore, computeStreak } from '@/stores/progressStore';
+import { useSettingsStore } from '@/stores/settingsStore';
+import { useAppTheme } from '@/hooks/useAppTheme';
+import { toHijri, formatHijri } from '@/utils/hijri';
+import { verseOfTheDay } from '@/utils/quranMeta';
+import { ArabicFonts, Radius, Spacing, Type } from '@/constants/theme';
+import { Card, SectionTitle, Tap, Button } from '@/components/ui/kit';
+import { surahFrenchTitle, surahTransliteration } from '@/utils/surahNames';
 
-interface IslamicFeature {
-  id: string;
-  title: string;
-  icon: string;
-  color: string;
-  route?: string;
-  action?: () => void;
+type IconName = React.ComponentProps<typeof Ionicons>['name'];
+
+const greeting = (h: number) =>
+  h < 5 ? 'Bonne nuit' : h < 12 ? 'Bonjour' : h < 18 ? 'Bon après-midi' : 'Bonsoir';
+
+function formatCountdown(ms: number) {
+  if (ms <= 0) return 'maintenant';
+  const totalMin = Math.ceil(ms / 60000);
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  return h > 0 ? `dans ${h} h ${String(m).padStart(2, '0')}` : `dans ${m} min`;
 }
 
 export const IslamicHomeScreen: React.FC = () => {
-  const [userName] = useState('Mahmudoul Dipu'); // Nom de l'utilisateur
-  const [currentTime, setCurrentTime] = useState(new Date());
-  const [currentPrayer, setCurrentPrayer] = useState<PrayerTime | null>(null);
-  const [nextPrayer, setNextPrayer] = useState<PrayerTime | null>(null);
-  const [timeUntilNext, setTimeUntilNext] = useState({ hours: 0, minutes: 0, seconds: 0 });
+  const { colors } = useAppTheme();
+  const insets = useSafeAreaInsets();
+  const hijriOffset = useSettingsStore((s) => s.hijriOffset);
+  const city = useSettingsStore((s) => s.city);
+  const lastRead = useProgressStore((s) => s.lastRead);
+  const bookmarksCount = useProgressStore((s) => s.bookmarks.length);
+  const readingDays = useProgressStore((s) => s.readingDays);
 
-  const islamicFeatures: IslamicFeature[] = [
-    {
-      id: 'prayers',
-      title: 'PRIÈRES',
-      icon: 'time-outline',
-      color: '#E8F5E8',
-    },
-    {
-      id: 'qibla',
-      title: 'QIBLA',
-      icon: 'navigate-outline',
-      color: '#E8F5E8',
-    },
-    {
-      id: 'quran',
-      title: 'CORAN',
-      icon: 'book-outline',
-      color: '#1B5E20',
-      route: '/explore',
-    },
-    {
-      id: 'calendar',
-      title: 'CALENDRIER',
-      icon: 'calendar-outline',
-      color: '#E8F5E8',
-    },
-    {
-      id: 'duas',
-      title: 'DUAS',
-      icon: 'heart-outline',
-      color: '#1B5E20',
-    },
-    {
-      id: 'popular',
-      title: 'POPULAIRES',
-      icon: 'star-outline',
-      color: '#1B5E20',
-    },
-    {
-      id: 'halal',
-      title: 'HALAL',
-      icon: 'checkmark-circle-outline',
-      color: '#1B5E20',
-    },
-    {
-      id: 'maps',
-      title: 'CARTES',
-      icon: 'map-outline',
-      color: '#E8F5E8',
-    },
-    {
-      id: 'premium',
-      title: 'PREMIUM',
-      icon: 'diamond-outline',
-      color: '#1B5E20',
-    },
-  ];
+  const [now, setNow] = useState(new Date());
+  const [prayers, setPrayers] = useState<DailyPrayerTimes>(() =>
+    prayerTimesService.calculatePrayerTimes()
+  );
+  const [dailyVerse, setDailyVerse] = useState<Verse | null>(null);
 
+  // 15 s suffisent pour un compte à rebours à la minute — inutile de re-rendre chaque seconde.
   useEffect(() => {
-    // Fonction pour mettre à jour les heures de prière
-    const updatePrayerTimes = () => {
-      const dailyTimes = prayerTimesService.calculatePrayerTimes();
-      setCurrentPrayer(dailyTimes.currentPrayer);
-      setNextPrayer(dailyTimes.nextPrayer);
-      setTimeUntilNext(prayerTimesService.getTimeUntilNextPrayer());
-    };
-
-    // Mise à jour initiale
-    updatePrayerTimes();
-
-    // Timer pour mettre à jour les prières et l'heure
     const timer = setInterval(() => {
-      setCurrentTime(new Date());
-      updatePrayerTimes();
-    }, 1000);
-
+      setNow(new Date());
+      setPrayers(prayerTimesService.calculatePrayerTimes());
+    }, 15000);
     return () => clearInterval(timer);
   }, []);
 
+  useEffect(() => {
+    const { global } = verseOfTheDay();
+    quranApi
+      .getVerseByGlobalNumber(global)
+      .then(setDailyVerse)
+      .catch(() => setDailyVerse(null));
+  }, []);
 
-  const handleFeaturePress = (feature: IslamicFeature) => {
-    if (feature.route) {
-      router.push(feature.route as any);
-    } else if (feature.action) {
-      feature.action();
-    } else {
-      console.log(`Feature ${feature.title} pressed - not implemented yet`);
-    }
-  };
+  const hijri = useMemo(() => formatHijri(toHijri(now, hijriOffset)), [now, hijriOffset]);
+  const gregorian = now.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+  const streak = computeStreak(readingDays);
 
-  // Fonction pour formater la date française
-  const formatFrenchDate = (date: Date) => {
-    return date.toLocaleDateString('fr-FR', {
-      weekday: 'short',
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric'
+  const prayerList = [prayers.fajr, prayers.dhuhr, prayers.asr, prayers.maghrib, prayers.isha];
+  const next = prayers.nextPrayer;
+  const msToNext = next ? next.timeDate.getTime() - now.getTime() : 0;
+
+  const shareVerse = () => {
+    if (!dailyVerse) return;
+    Share.share({
+      message: `${dailyVerse.text_arabic}\n\n« ${dailyVerse.text_french} »\n— Coran ${dailyVerse.surah_id}:${dailyVerse.verse_number}`,
     });
   };
-
-  // Fonction pour calculer approximativement la date islamique
-  const getIslamicDate = (date: Date) => {
-    // Calcul approximatif de la date hégiréenne (simplifié)
-    const islamicMonths = [
-      'Muharram', 'Safar', 'Rabi al-Awwal', 'Rabi al-Thani',
-      'Jumada al-Awwal', 'Jumada al-Thani', 'Rajab', 'Shaban',
-      'Ramadan', 'Shawwal', 'Dhul Qidah', 'Dhul Hijjah'
-    ];
-
-    // Estimation approximative (pour une vraie app, utiliser une bibliothèque)
-    const islamicYear = 1446; // Approximation pour 2024-2025
-    const islamicMonth = islamicMonths[5]; // Jumada al-Thani
-    const islamicDay = Math.floor((date.getDate() + 15) % 30) + 1;
-
-    return `${islamicDay} ${islamicMonth} ${islamicYear} AH`;
-  };
-
-  // Fonction pour formater l'heure actuelle
-  const formatCurrentTime = (date: Date) => {
-    return date.toLocaleTimeString('fr-FR', {
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false
-    });
-  };
-
 
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#1B5E20" />
-
-      {/* Header avec date islamique */}
-      <View style={styles.dateHeader}>
-        <View style={styles.dateContainer}>
-          <Ionicons name="calendar" size={16} color="white" />
-          <Text style={styles.dateText}>{formatFrenchDate(currentTime)}</Text>
-          <Text style={styles.islamicDate}>{getIslamicDate(currentTime)}</Text>
-        </View>
-        <TouchableOpacity>
-          <Ionicons name="share" size={20} color="white" />
-        </TouchableOpacity>
+    <ScrollView
+      style={{ flex: 1, backgroundColor: colors.background }}
+      contentContainerStyle={{ paddingTop: insets.top + Spacing.md, paddingBottom: Spacing.xxxl }}
+      showsVerticalScrollIndicator={false}
+    >
+      {/* En-tête */}
+      <View style={styles.header}>
+        <Text style={[Type.caption, { color: colors.textMuted, textTransform: 'capitalize' }]}>
+          {gregorian} · {hijri}
+        </Text>
+        <Text style={[Type.largeTitle, { color: colors.text, marginTop: 4 }]}>
+          {greeting(now.getHours())}
+        </Text>
+        <Text style={[Type.body, { color: colors.textMuted }]}>Assalamou alaykoum 🤲</Text>
       </View>
 
-      {/* Image de mosquée avec overlay prière */}
-      <View style={styles.mosqueSection}>
+      {/* Prochaine prière */}
+      <View style={styles.section}>
         <ImageBackground
           source={require('@/assets/images/dakar-mosque.jpg')}
-          style={styles.mosqueBackground}
+          style={styles.hero}
+          imageStyle={{ borderRadius: Radius.xl }}
           resizeMode="cover"
         >
           <LinearGradient
-            colors={['transparent', 'rgba(0, 0, 0, 0.6)']}
-            style={styles.mosqueOverlay}
-          >
-            <View style={styles.prayerTimeContainer}>
-              <View style={styles.soundIcon}>
-                <Ionicons name="volume-medium" size={24} color="white" />
-              </View>
-              <Text style={styles.currentPrayerName}>
-                {currentPrayer?.name || 'En cours...'}
-              </Text>
-              <Text style={styles.currentTime}>{formatCurrentTime(currentTime)}</Text>
-              <Text style={styles.countdown}>
-                {timeUntilNext.hours > 0 || timeUntilNext.minutes > 0
-                  ? `(-${timeUntilNext.hours}:${timeUntilNext.minutes.toString().padStart(2, '0')}:${timeUntilNext.seconds.toString().padStart(2, '0')})`
-                  : ''}
-              </Text>
-              <Text style={styles.location}>Dakar</Text>
-              <View style={styles.dots}>
-                <View style={[styles.dot, styles.activeDot]} />
-                <View style={styles.dot} />
-                <View style={styles.dot} />
-              </View>
+            colors={['rgba(6,30,22,0.15)', 'rgba(6,30,22,0.88)']}
+            style={[StyleSheet.absoluteFill, { borderRadius: Radius.xl }]}
+          />
+          <View style={styles.heroTop}>
+            <View style={styles.heroPill}>
+              <Ionicons name="location" size={12} color="#fff" />
+              <Text style={styles.heroPillText}>{city}</Text>
             </View>
-          </LinearGradient>
+          </View>
+          <View>
+            <Text style={styles.heroLabel}>Prochaine prière</Text>
+            <View style={styles.heroRow}>
+              <Text style={styles.heroName}>{next?.name ?? '—'}</Text>
+              <Text style={styles.heroTime}>{next?.time ?? ''}</Text>
+            </View>
+            <Text style={styles.heroCountdown}>{formatCountdown(msToNext)}</Text>
+          </View>
+          <View style={styles.prayerStrip}>
+            {prayerList.map((p) => {
+              const active = next?.name === p.name;
+              return (
+                <View key={p.name} style={[styles.prayerCell, active && styles.prayerCellActive]}>
+                  <Text style={[styles.prayerCellName, active && { color: '#0B3D2E' }]} numberOfLines={1}>
+                    {p.name}
+                  </Text>
+                  <Text style={[styles.prayerCellTime, active && { color: '#0B3D2E' }]}>{p.time}</Text>
+                </View>
+              );
+            })}
+          </View>
         </ImageBackground>
       </View>
 
-      {/* Grille d'icônes */}
-      <View style={styles.iconGrid}>
-        {islamicFeatures.map((feature) => (
-          <TouchableOpacity
-            key={feature.id}
-            style={styles.iconItem}
-            onPress={() => handleFeaturePress(feature)}
-            activeOpacity={0.7}
+      {/* Reprendre la lecture */}
+      <View style={styles.section}>
+        <SectionTitle>Ma lecture</SectionTitle>
+        {lastRead ? (
+          <Card
+            onPress={() => router.push(`/surah/${lastRead.surahId}?verse=${lastRead.verseNumber}`)}
           >
-            <View style={[styles.iconCircle, { backgroundColor: feature.color }]}>
-              <Ionicons
-                name={feature.icon as any}
-                size={24}
-                color={feature.color === '#1B5E20' ? '#FFFFFF' : '#D4AF37'}
+            <View style={styles.rowBetween}>
+              <View style={{ flex: 1 }}>
+                <Text style={[Type.caption, { color: colors.primary }]}>Reprendre</Text>
+                <Text style={[Type.title, { color: colors.text, marginTop: 2 }]}>{surahTransliteration(lastRead.surahNumber)}</Text>
+                <Text style={[Type.caption, { color: colors.textMuted, marginTop: 2 }]}>
+                  {surahFrenchTitle(lastRead.surahNumber)} · verset {lastRead.verseNumber} sur {lastRead.versesCount}
+                </Text>
+              </View>
+              <Text style={[styles.arabicName, { color: colors.arabic }]}>{lastRead.surahNameArabic}</Text>
+            </View>
+            <View style={[styles.progressTrack, { backgroundColor: colors.surfaceAlt }]}>
+              <View
+                style={[
+                  styles.progressFill,
+                  {
+                    backgroundColor: colors.primary,
+                    width: `${Math.min(100, (lastRead.verseNumber / Math.max(1, lastRead.versesCount)) * 100)}%`,
+                  },
+                ]}
               />
             </View>
-            <Text style={styles.iconLabel}>{feature.title}</Text>
-          </TouchableOpacity>
-        ))}
+          </Card>
+        ) : (
+          <Card tone="soft">
+            <Text style={[Type.headline, { color: colors.text }]}>Commencez votre voyage</Text>
+            <Text style={[Type.callout, { color: colors.textMuted, marginTop: 4, marginBottom: Spacing.md }]}>
+              Lisez, écoutez et comprenez le Coran — en arabe, en français et en phonétique.
+            </Text>
+            <Button title="Ouvrir Al-Fatiha" icon="book-outline" onPress={() => router.push('/surah/1')} />
+          </Card>
+        )}
+
+        <View style={[styles.statsRow]}>
+          <Stat icon="flame" value={streak} label={streak > 1 ? 'jours de suite' : 'jour de suite'} />
+          <Stat
+            icon="bookmark"
+            value={bookmarksCount}
+            label="favoris"
+            onPress={() => router.push('/bookmarks')}
+          />
+        </View>
       </View>
-    </View>
+
+      {/* Verset du jour */}
+      {dailyVerse && (
+        <View style={styles.section}>
+          <SectionTitle action="Partager" onAction={shareVerse}>
+            Verset du jour
+          </SectionTitle>
+          <Card onPress={() => router.push(`/surah/${dailyVerse.surah_id}?verse=${dailyVerse.verse_number}`)}>
+            <Text style={[styles.dailyArabic, { color: colors.arabic }]}>{dailyVerse.text_arabic}</Text>
+            <Text style={[Type.body, { color: colors.text, marginTop: Spacing.md }]}>
+              « {dailyVerse.text_french} »
+            </Text>
+            <Text style={[Type.caption, { color: colors.gold, marginTop: Spacing.sm }]}>
+              {dailyVerse.surah?.name_transliteration ?? 'Sourate'} {dailyVerse.surah_id}:{dailyVerse.verse_number}
+            </Text>
+          </Card>
+        </View>
+      )}
+
+      {/* Accès rapides */}
+      <View style={styles.section}>
+        <SectionTitle>Explorer</SectionTitle>
+        <View style={styles.quickGrid}>
+          <Quick icon="book-outline" title="Le Coran" subtitle="114 sourates" onPress={() => router.push('/explore')} />
+          <Quick
+            icon="chatbubbles-outline"
+            title="Tafsir"
+            subtitle="Explication en wolof"
+            onPress={() => router.push('/tafsir')}
+          />
+          <Quick icon="mic-outline" title="Récitateurs" subtitle="Choisir une voix" onPress={() => router.push('/hafiz')} />
+          <Quick icon="bookmark-outline" title="Favoris" subtitle="Vos versets" onPress={() => router.push('/bookmarks')} />
+        </View>
+      </View>
+    </ScrollView>
   );
 };
 
+function Stat({ icon, value, label, onPress }: { icon: IconName; value: number; label: string; onPress?: () => void }) {
+  const { colors } = useAppTheme();
+  return (
+    <Card onPress={onPress} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', paddingVertical: Spacing.md }}>
+      <View style={[styles.statIcon, { backgroundColor: colors.goldSoft }]}>
+        <Ionicons name={icon} size={18} color={colors.gold} />
+      </View>
+      <View style={{ marginLeft: Spacing.md }}>
+        <Text style={[Type.headline, { color: colors.text }]}>{value}</Text>
+        <Text style={[Type.caption, { color: colors.textMuted }]}>{label}</Text>
+      </View>
+    </Card>
+  );
+}
+
+function Quick({ icon, title, subtitle, onPress }: { icon: IconName; title: string; subtitle: string; onPress: () => void }) {
+  const { colors } = useAppTheme();
+  return (
+    <Tap
+      haptic
+      onPress={onPress}
+      style={[styles.quick, { backgroundColor: colors.surface, borderColor: colors.border }]}
+    >
+      <View style={[styles.quickIcon, { backgroundColor: colors.primarySoft }]}>
+        <Ionicons name={icon} size={20} color={colors.primary} />
+      </View>
+      <Text style={[Type.headline, { color: colors.text, marginTop: Spacing.md }]}>{title}</Text>
+      <Text style={[Type.caption, { color: colors.textMuted }]}>{subtitle}</Text>
+    </Tap>
+  );
+}
+
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F5F5F5',
-  },
-  dateHeader: {
-    backgroundColor: '#1B5E20',
-    flexDirection: 'row',
+  header: { paddingHorizontal: Spacing.xl, marginBottom: Spacing.xl },
+  section: { paddingHorizontal: Spacing.xl, marginBottom: Spacing.xxl },
+  hero: {
+    minHeight: 230,
+    borderRadius: Radius.xl,
+    padding: Spacing.xl,
     justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    paddingTop: 50,
+    overflow: 'hidden',
   },
-  dateContainer: {
+  heroTop: { flexDirection: 'row', justifyContent: 'flex-end' },
+  heroPill: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: Radius.pill,
   },
-  dateText: {
-    color: 'white',
-    fontSize: 14,
-    fontWeight: '500',
-    marginLeft: 8,
-  },
-  islamicDate: {
-    color: 'rgba(255, 255, 255, 0.8)',
-    fontSize: 12,
-    marginLeft: 8,
-  },
-  mosqueSection: {
-    height: 300,
-  },
-  mosqueBackground: {
+  heroPillText: { color: '#fff', fontSize: 12, fontWeight: '600' },
+  heroLabel: { color: 'rgba(255,255,255,0.75)', fontSize: 13, fontWeight: '600', marginTop: Spacing.lg },
+  heroRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' },
+  heroName: { color: '#fff', fontSize: 30, fontWeight: '700', letterSpacing: -0.5 },
+  heroTime: { color: '#fff', fontSize: 30, fontWeight: '300', fontVariant: ['tabular-nums'] },
+  heroCountdown: { color: '#E9D49A', fontSize: 14, fontWeight: '600', marginTop: 2 },
+  prayerStrip: { flexDirection: 'row', gap: 6, marginTop: Spacing.lg },
+  prayerCell: {
     flex: 1,
-  },
-  mosqueOverlay: {
-    flex: 1,
-    justifyContent: 'center',
     alignItems: 'center',
+    paddingVertical: 8,
+    borderRadius: Radius.md,
+    backgroundColor: 'rgba(255,255,255,0.12)',
   },
-  prayerTimeContainer: {
-    alignItems: 'center',
+  prayerCellActive: { backgroundColor: '#E9D49A' },
+  prayerCellName: { color: 'rgba(255,255,255,0.8)', fontSize: 11, fontWeight: '600' },
+  prayerCellTime: { color: '#fff', fontSize: 13, fontWeight: '700', marginTop: 2, fontVariant: ['tabular-nums'] },
+  rowBetween: { flexDirection: 'row', alignItems: 'center' },
+  arabicName: { fontFamily: ArabicFonts.regular, fontSize: 30, marginLeft: Spacing.md },
+  progressTrack: { height: 6, borderRadius: 3, marginTop: Spacing.lg, overflow: 'hidden' },
+  progressFill: { height: 6, borderRadius: 3 },
+  statsRow: { flexDirection: 'row', gap: Spacing.md, marginTop: Spacing.md },
+  statIcon: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  dailyArabic: {
+    fontFamily: ArabicFonts.regular,
+    fontSize: 26,
+    lineHeight: 48,
+    textAlign: 'right',
+    writingDirection: 'rtl',
   },
-  soundIcon: {
-    marginBottom: 16,
+  quickGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.md },
+  quick: {
+    width: '48%',
+    flexGrow: 1,
+    padding: Spacing.lg,
+    borderRadius: Radius.lg,
+    borderWidth: StyleSheet.hairlineWidth,
   },
-  currentPrayerName: {
-    color: 'white',
-    fontSize: 24,
-    fontWeight: 'bold',
-    marginBottom: 8,
-  },
-  currentTime: {
-    color: 'white',
-    fontSize: 48,
-    fontWeight: 'bold',
-    fontFamily: 'monospace',
-  },
-  countdown: {
-    color: 'rgba(255, 255, 255, 0.8)',
-    fontSize: 16,
-    marginTop: 4,
-  },
-  location: {
-    color: 'white',
-    fontSize: 18,
-    marginTop: 8,
-    fontWeight: '500',
-  },
-  dots: {
-    flexDirection: 'row',
-    marginTop: 20,
-  },
-  dot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: 'rgba(255, 255, 255, 0.4)',
-    marginHorizontal: 4,
-  },
-  activeDot: {
-    backgroundColor: 'white',
-  },
-  iconGrid: {
-    backgroundColor: 'white',
-    flex: 1,
-    paddingHorizontal: 20,
-    paddingVertical: 30,
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-  },
-  iconItem: {
-    width: (width - 80) / 3,
-    alignItems: 'center',
-    marginBottom: 30,
-  },
-  iconCircle: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 8,
-  },
-  iconLabel: {
-    fontSize: 11,
-    color: '#666',
-    textAlign: 'center',
-    fontWeight: '600',
-  },
+  quickIcon: { width: 40, height: 40, borderRadius: Radius.md, alignItems: 'center', justifyContent: 'center' },
 });

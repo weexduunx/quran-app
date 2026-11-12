@@ -1,7 +1,16 @@
 import { Surah, Verse, Tafsir } from '../stores/quranStore';
 import { CacheService, CACHE_KEYS } from './cacheService';
+import { API_CONFIG } from '../config/api';
 
-const API_BASE_URL = 'http://192.168.1.47:8000/api/v1';
+import { withSurahNames } from '@/utils/surahNames';
+
+const fixVerse = (v: Verse): Verse => (v?.surah ? { ...v, surah: withSurahNames(v.surah) } : v);
+const fixSurah = <T extends Surah & { verses?: Verse[] }>(s: T): T => {
+  const fixed = withSurahNames(s);
+  return fixed?.verses ? { ...fixed, verses: fixed.verses.map(fixVerse) } : fixed;
+};
+
+const API_BASE_URL = API_CONFIG.BACKEND_URL;
 
 interface ApiResponse<T> {
   success: boolean;
@@ -118,32 +127,35 @@ class QuranApiService {
   }
 
   async getSurahs(): Promise<Surah[]> {
-    return this.fetchApi<Surah[]>('/surahs', CACHE_KEYS.SURAHS, 7 * 24 * 60 * 60 * 1000); // Cache 7 jours
+    const list = await this.fetchApi<Surah[]>('/surahs', CACHE_KEYS.SURAHS, 7 * 24 * 60 * 60 * 1000); // Cache 7 jours
+    return list.map(withSurahNames);
   }
 
   async getSurah(id: number): Promise<Surah & { verses: Verse[] }> {
-    return this.fetchApi<Surah & { verses: Verse[] }>(`/surahs/${id}`, CACHE_KEYS.VERSES(id));
+    return fixSurah(await this.fetchApi<Surah & { verses: Verse[] }>(`/surahs/${id}`, CACHE_KEYS.VERSES(id)));
   }
 
   async getSurahByNumber(number: number): Promise<Surah & { verses: Verse[] }> {
-    return this.fetchApi<Surah & { verses: Verse[] }>(`/surahs/number/${number}`, `surah_number_${number}`);
+    return fixSurah(await this.fetchApi<Surah & { verses: Verse[] }>(`/surahs/number/${number}`, `surah_number_${number}`));
   }
 
   async getVersesBySurah(surahId: number): Promise<Verse[]> {
-    return this.fetchApi<Verse[]>(`/verses/surah/${surahId}`, CACHE_KEYS.VERSES_LIST(surahId));
+    const verses = await this.fetchApi<Verse[]>(`/verses/surah/${surahId}`, CACHE_KEYS.VERSES_LIST(surahId));
+    return verses.map(fixVerse);
   }
 
   async getVerse(id: number): Promise<Verse> {
-    return this.fetchApi<Verse>(`/verses/${id}`, `verse_${id}`);
+    return fixVerse(await this.fetchApi<Verse>(`/verses/${id}`, `verse_${id}`));
   }
 
   async getVerseByGlobalNumber(globalNumber: number): Promise<Verse> {
-    return this.fetchApi<Verse>(`/verses/global/${globalNumber}`, `verse_global_${globalNumber}`);
+    return fixVerse(await this.fetchApi<Verse>(`/verses/global/${globalNumber}`, `verse_global_${globalNumber}`));
   }
 
   async searchSurahs(query: string): Promise<Surah[]> {
     const searchKey = CACHE_KEYS.SEARCH_RESULTS(`surahs_${query}`);
-    return this.fetchApi<Surah[]>(`/surahs/search?q=${encodeURIComponent(query)}`, searchKey, 60 * 60 * 1000); // Cache 1 heure
+    const list = await this.fetchApi<Surah[]>(`/surahs/search?q=${encodeURIComponent(query)}`, searchKey, 60 * 60 * 1000); // Cache 1 heure
+    return list.map(withSurahNames);
   }
 
   async searchVerses(query: string, page: number = 1): Promise<{

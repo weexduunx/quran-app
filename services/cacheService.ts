@@ -7,6 +7,9 @@ export interface CacheItem<T> {
   expiry?: number;
 }
 
+/** Préfixes des clés de cache (jamais les stores utilisateur) */
+export const CACHE_KEY_PREFIXES = ['quran_cache_', 'simple_sync_', 'word_sync_'];
+
 export class CacheService {
   private static readonly CACHE_PREFIX = 'quran_cache_';
   private static readonly DEFAULT_EXPIRY = 24 * 60 * 60 * 1000; // 24 heures
@@ -89,35 +92,25 @@ export class CacheService {
     }
   }
 
-  // Fonction d'urgence pour vider tout le cache en cas de corruption
+  /**
+   * Vidage d'urgence en cas de corruption.
+   * Ne supprime QUE les données de cache : les favoris, la progression de
+   * lecture et les réglages (stores persistés) sont conservés.
+   */
   static async forceClear(): Promise<void> {
     try {
-      console.log('Force clearing all cache due to corruption...');
-      await AsyncStorage.clear();
-      console.log('Cache forcé vidé avec succès');
+      const keys = await AsyncStorage.getAllKeys();
+      const cacheKeys = keys.filter((key) => CACHE_KEY_PREFIXES.some((p) => key.startsWith(p)));
+      if (cacheKeys.length > 0) await AsyncStorage.multiRemove(cacheKeys);
     } catch (error) {
       console.error('Erreur lors du nettoyage forcé du cache:', error);
-      // Essayer une approche alternative
-      try {
-        const keys = await AsyncStorage.getAllKeys();
-        for (const key of keys) {
-          if (key.startsWith(this.CACHE_PREFIX)) {
-            try {
-              await AsyncStorage.removeItem(key);
-            } catch (removeError) {
-              console.error(`Erreur lors de la suppression de ${key}:`, removeError);
-            }
-          }
-        }
-      } catch (finalError) {
-        console.error('Impossible de nettoyer le cache:', finalError);
-      }
     }
   }
 
   static async isOnline(): Promise<boolean> {
     const netInfo = await NetInfo.fetch();
-    return netInfo.isConnected && netInfo.isInternetReachable;
+    // isInternetReachable vaut null tant que NetInfo n'a pas testé : on considère alors en ligne
+    return netInfo.isConnected !== false && netInfo.isInternetReachable !== false;
   }
 
   static async getCacheSize(): Promise<number> {

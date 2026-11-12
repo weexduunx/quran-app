@@ -1,12 +1,78 @@
-import { TafsirContent, TafsirBook } from '@/stores/tafsirStore';
+/**
+ * Accès aux tafsirs réels.
+ * - Texte : API Quran.com v4 (`/tafsirs/{id}/by_ayah/{s:a}`), HTML converti en blocs.
+ * - Audio wolof : collections Internet Archive (Baye Niasse, Oustaz Ibrahima Fall).
+ *   Pour ajouter un tafsir audio : un livre `kind: 'audio'` dans tafsirStore
+ *   + une entrée dans AUDIO_SOURCES ci-dessous.
+ */
+import type { TafsirBook } from '@/stores/tafsirStore';
 
-// Fichiers réels du tafsir audio en wolof de Cheikh Ibrahima Niasse (Baye Niasse),
-// hébergés sur Internet Archive : https://archive.org/details/Tafsir-Baye-NIASS
-// Sourates 41, 42 et 43 ne sont pas disponibles dans cette collection.
-const BAYE_NIASSE_ARCHIVE_BASE = 'https://archive.org/download/Tafsir-Baye-NIASS';
-const BAYE_NIASSE_FILES: { [surahNumber: number]: string } = {
+const QURAN_COM_API = 'https://api.quran.com/api/v4';
+
+export type TafsirBlock = { type: 'heading' | 'paragraph'; text: string };
+
+export interface TafsirText {
+  blocks: TafsirBlock[];
+  /** Versets couverts par ce commentaire (ex. ['2:1', '2:2']) */
+  verseKeys: string[];
+}
+
+const textCache = new Map<string, Promise<TafsirText>>();
+
+const decodeEntities = (s: string) =>
+  s
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;|&apos;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
+    .replace(/&amp;/g, '&');
+
+/** Convertit le HTML de Quran.com en titres + paragraphes lisibles. */
+export function htmlToBlocks(html: string): TafsirBlock[] {
+  const blocks: TafsirBlock[] = [];
+  const marked = html
+    .replace(/<h[1-6][^>]*>/gi, '\n\u0001')
+    .replace(/<\/h[1-6]>/gi, '\u0002\n')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div|li)>/gi, '\n')
+    .replace(/<[^>]+>/g, '');
+  for (const raw of decodeEntities(marked).split('\n')) {
+    const isHeading = raw.includes('\u0001');
+    const text = raw.replace(/[\u0001\u0002]/g, '').replace(/[ \t]+/g, ' ').trim();
+    if (!text) continue;
+    blocks.push({ type: isHeading ? 'heading' : 'paragraph', text });
+  }
+  return blocks;
+}
+
+async function fetchText(resourceId: number, verseKey: string): Promise<TafsirText> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15000);
+  try {
+    const res = await fetch(`${QURAN_COM_API}/tafsirs/${resourceId}/by_ayah/${verseKey}`, {
+      signal: controller.signal,
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const json = await res.json();
+    const t = json?.tafsir;
+    return {
+      blocks: htmlToBlocks(t?.text ?? ''),
+      verseKeys: Object.keys(t?.verses ?? {}),
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Audio wolof — Cheikh Ibrahima Niasse
+// https://archive.org/details/Tafsir-Baye-NIASS (sourates 41 à 43 absentes)
+// ---------------------------------------------------------------------------
+const BAYE_NIASSE_BASE = 'https://archive.org/download/Tafsir-Baye-NIASS';
+const BAYE_NIASSE_FILES: Record<number, string> = {
   1: '001 - Fatiha.mp3',
-  // La sourate 2 (Baqara) est découpée en 4 fichiers, gérée séparément ci-dessous
   3: '003 - Al Imrâne.mp3',
   4: '004 - An Nissa.mp3',
   5: '005 - Mâ idah.mp3',
@@ -45,7 +111,6 @@ const BAYE_NIASSE_FILES: { [surahNumber: number]: string } = {
   38: '038 - Saad_a36-88.mp3',
   39: '039 - Az Zumar.mp3',
   40: '040 - Ghaafir_a1-19.mp3',
-  // 41, 42, 43 : non disponibles dans cette collection
   44: '044 - Ad Doukhaane.mp3',
   45: '045 - Al Jâthiya.mp3',
   46: '046 - Al Ahqaf.mp3',
@@ -119,170 +184,67 @@ const BAYE_NIASSE_FILES: { [surahNumber: number]: string } = {
   114: '114 - An Naas.mp3',
 };
 
-function getBayeNiasseAudioUrl(surahId: number, verseId: number): string | undefined {
-  let filename: string | undefined;
+/** Remarques sur les enregistrements partiels (d'après les noms de fichiers) */
+const PARTIAL_NOTES: Record<number, string> = {
+  37: 'Enregistrement des versets 1 à 144',
+  38: 'Enregistrement des versets 36 à 88',
+  40: 'Enregistrement des versets 1 à 19',
+  52: 'Enregistrement du verset 22 à la fin',
+};
 
-  if (surahId === 2) {
-    // Al-Baqara est découpée en 4 fichiers par plage de versets
-    if (verseId <= 58) filename = '002 - Baqara 1.mp3';
-    else if (verseId <= 141) filename = '002 - Baqara 2.mp3';
-    else if (verseId <= 238) filename = '002 - Baqara 3.mp3';
-    else filename = '002 - Baqara 4.mp3';
-  } else {
-    filename = BAYE_NIASSE_FILES[surahId];
-  }
-
-  return filename ? `${BAYE_NIASSE_ARCHIVE_BASE}/${encodeURIComponent(filename)}` : undefined;
+export interface AudioTrack {
+  title: string;
+  url: string;
 }
 
-class TafsirApiService {
-  private baseUrl = 'https://api.quranunlocked.com'; // API exemple
+const archiveUrl = (file: string) => `${BAYE_NIASSE_BASE}/${encodeURIComponent(file)}`;
 
-  // Méthode pour récupérer le contenu d'un tafsir
-  async getTafsirContent(bookId: number, surahId: number, verseId: number): Promise<TafsirContent | null> {
-    try {
-      // Pour le moment, simulons des données
-      // Dans une vraie application, vous feriez un appel API ici
-      const mockTafsirData = await this.getMockTafsirData(bookId, surahId, verseId);
-      return mockTafsirData;
-    } catch (error) {
-      console.error('Erreur lors de la récupération du tafsir:', error);
-      return null;
-    }
+// Oustaz Ibrahima Fall — https://archive.org/details/tafsirfall (114 sourates)
+const ibrahimaFallTracks = (surah: number): AudioTrack[] => [
+  {
+    title: 'Sourate complète',
+    url: `https://archive.org/download/tafsirfall/S${String(surah).padStart(3, '0')}_Tafsir_Coran_de_Oustaz_Ibrahima_Fall.mp3`,
+  },
+];
+
+function bayeNiasseTracks(surah: number): AudioTrack[] {
+  if (surah === 2) {
+    return [
+      { title: 'Partie 1 · versets 1–58', url: archiveUrl('002 - Baqara 1.mp3') },
+      { title: 'Partie 2 · versets 59–141', url: archiveUrl('002 - Baqara 2.mp3') },
+      { title: 'Partie 3 · versets 142–238', url: archiveUrl('002 - Baqara 3.mp3') },
+      { title: 'Partie 4 · versets 239–286', url: archiveUrl('002 - Baqara 4.mp3') },
+    ];
   }
-
-  // Méthode pour récupérer tout le tafsir d'une sourate
-  async getSurahTafsir(bookId: number, surahId: number): Promise<TafsirContent[]> {
-    try {
-      // Simulation d'un appel API pour récupérer tout le tafsir d'une sourate
-      const mockData: TafsirContent[] = [];
-
-      // Générer des données simulées pour 10 versets par exemple
-      for (let verseId = 1; verseId <= 10; verseId++) {
-        const content = await this.getMockTafsirData(bookId, surahId, verseId);
-        if (content) {
-          mockData.push(content);
-        }
-      }
-
-      return mockData;
-    } catch (error) {
-      console.error('Erreur lors de la récupération du tafsir de la sourate:', error);
-      return [];
-    }
-  }
-
-  // Données simulées pour les différents tafsirs
-  private async getMockTafsirData(bookId: number, surahId: number, verseId: number): Promise<TafsirContent | null> {
-    const tafsirContents: { [key: number]: (surahId: number, verseId: number) => TafsirContent } = {
-      // Ibn Kathir
-      1: (surahId, verseId) => ({
-        id: parseInt(`${bookId}${surahId}${verseId}`),
-        bookId,
-        surahId,
-        verseId,
-        content: `Tafsir Ibn Kathir pour la sourate ${surahId}, verset ${verseId}: Ce verset révèle la miséricorde d'Allah et appelle les croyants à la réflexion sur Ses signes dans la création. Les compagnons du Prophète (paix et bénédictions sur lui) ont rapporté que ce passage était souvent récité lors des prières de nuit.`,
-        contentArabic: 'قال ابن كثير رحمه الله: هذه الآية تدل على رحمة الله الواسعة وتدعو المؤمنين إلى التفكر في آيات الله في الخلق',
-        reference: 'Tafsir Ibn Kathir, Vol. 1, p. 234'
-      }),
-
-      // At-Tabari
-      2: (surahId, verseId) => ({
-        id: parseInt(`${bookId}${surahId}${verseId}`),
-        bookId,
-        surahId,
-        verseId,
-        content: `Tafsir At-Tabari pour la sourate ${surahId}, verset ${verseId}: At-Tabari explique que ce verset établit un principe fondamental de la foi islamique. Il cite plusieurs hadiths authentiques du Prophète (paix et bénédictions sur lui) qui élucident le sens profond de ces paroles divines.`,
-        contentArabic: 'قال الطبري رحمه الله: هذه الآية تؤسس مبدأ أساسيا من مبادئ العقيدة الإسلامية',
-        reference: 'Jami\' al-Bayan, At-Tabari'
-      }),
-
-      // Cheikh Ibrahima Niasse / Baye Niasse (en Wolof avec audio réel, sourate par sourate)
-      6: (surahId, verseId) => ({
-        id: parseInt(`${bookId}${surahId}${verseId}`),
-        bookId,
-        surahId,
-        verseId,
-        content: `Tafsir bu Cheikh Ibrahima Niasse (Baye Niasse) ci sourate ${surahId}: Boole ayah bi dafay wone ne Allah subhanahu wa ta'ala dafay wax ak nun ci seen dooleel ak seen gongue. Mu dafay jaay nun bañ tàng ci lu nekk, bañ xool ay alama yu Allah defar ci alamdun.`,
-        reference: 'Tafsir Baye Niasse - Explication en Wolof (Internet Archive)',
-        audioUrl: getBayeNiasseAudioUrl(surahId, verseId),
-      }),
-
-      // Imam Moustapha Gueye (en Wolof) : pas encore de fichier audio téléchargeable
-      // directement identifié pour ce tafsir (uniquement des vidéos YouTube),
-      // donc pas d'audioUrl pour l'instant - le lecteur affichera "audio bientôt disponible"
-      7: (surahId, verseId) => ({
-        id: parseInt(`${bookId}${surahId}${verseId}`),
-        bookId,
-        surahId,
-        verseId,
-        content: `Xibar wu Imam Moustapha Gueye ci sourate ${surahId}, verset ${verseId}: Ayah bii dafay jar nun ak yoon wi nettali Islam. Mu dafay jaay nun ni nu war a defar gëstu yalla, te ni Allah subhanahu wa ta'ala dafay feeñal ak yaram yu nekk ci suuf.`,
-        reference: 'Imam Moustapha Gueye - Tafsir en Wolof',
-      }),
-
-      // Sayyid Qutb
-      4: (surahId, verseId) => ({
-        id: parseInt(`${bookId}${surahId}${verseId}`),
-        bookId,
-        surahId,
-        verseId,
-        content: `Analyse de Sayyid Qutb pour la sourate ${surahId}, verset ${verseId}: Ce verset présente une vision holistique de la vie islamique, intégrant la spiritualité dans tous les aspects de l'existence humaine. Qutb souligne comment ce passage établit les fondements d'une société islamique juste et équilibrée.
-
-        L'auteur met l'accent sur l'application pratique de ces enseignements dans le contexte moderne, montrant comment les principes coraniques restent pertinents pour résoudre les défis contemporains.`,
-        contentArabic: 'يقول سيد قطب: هذه الآية تقدم رؤية شاملة للحياة الإسلامية',
-        reference: 'Fi Zilal al-Quran, Sayyid Qutb'
-      })
-    };
-
-    const contentGenerator = tafsirContents[bookId];
-    if (contentGenerator) {
-      return contentGenerator(surahId, verseId);
-    }
-
-    return null;
-  }
-
-  // Méthode pour rechercher dans les tafsirs
-  async searchTafsir(query: string, bookId?: number): Promise<TafsirContent[]> {
-    try {
-      // Simulation d'une recherche
-      const results: TafsirContent[] = [];
-
-      // Dans une vraie application, vous feriez une recherche dans la base de données
-      // ou via une API de recherche
-
-      return results;
-    } catch (error) {
-      console.error('Erreur lors de la recherche:', error);
-      return [];
-    }
-  }
-
-  // Méthode pour précharger le contenu audio
-  async preloadAudioContent(bookId: number, surahId: number, verseId: number): Promise<boolean> {
-    try {
-      const content = await this.getTafsirContent(bookId, surahId, verseId);
-      return !!(content && content.audioUrl);
-    } catch (error) {
-      console.error('Erreur lors du préchargement audio:', error);
-      return false;
-    }
-  }
-
-  // Méthode pour obtenir la liste des versets disponibles pour un tafsir audio
-  async getAvailableAudioVerses(bookId: number, surahId: number): Promise<number[]> {
-    // Pour les tafsirs wolof, on simule la disponibilité de tous les versets
-    if (bookId >= 6 && bookId <= 7) {
-      // Retourner une liste d'exemple de versets disponibles
-      return Array.from({ length: 20 }, (_, i) => i + 1); // Versets 1-20 disponibles
-    }
-    return [];
-  }
-
-  // Vérifier si un tafsir a du contenu audio
-  isAudioTafsir(bookId: number): boolean {
-    return bookId >= 6 && bookId <= 7; // Tafsirs wolof ont l'audio
-  }
+  const file = BAYE_NIASSE_FILES[surah];
+  return file ? [{ title: PARTIAL_NOTES[surah] ?? 'Sourate complète', url: archiveUrl(file) }] : [];
 }
 
-export const tafsirApi = new TafsirApiService();
+/** Pistes audio par livre : (sourate) → pistes ([] si non disponible) */
+const AUDIO_SOURCES: Record<string, (surah: number) => AudioTrack[]> = {
+  'baye-niasse': bayeNiasseTracks,
+  'ibrahima-fall': ibrahimaFallTracks,
+};
+
+export const tafsirApi = {
+  getText(book: TafsirBook, surah: number, verse: number): Promise<TafsirText> {
+    if (!book.quranComId) return Promise.reject(new Error('Livre sans texte'));
+    const key = `${book.quranComId}|${surah}:${verse}`;
+    let p = textCache.get(key);
+    if (!p) {
+      p = fetchText(book.quranComId, `${surah}:${verse}`);
+      p.catch(() => textCache.delete(key));
+      textCache.set(key, p);
+    }
+    return p;
+  },
+
+  /** Pistes audio d'un livre pour une sourate (Al-Baqara de Baye Niasse : 4 parties). */
+  getAudioTracks(bookId: string, surah: number): AudioTrack[] {
+    return AUDIO_SOURCES[bookId]?.(surah) ?? [];
+  },
+
+  hasAudio(bookId: string, surah: number) {
+    return this.getAudioTracks(bookId, surah).length > 0;
+  },
+};

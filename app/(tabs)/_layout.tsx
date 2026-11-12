@@ -3,63 +3,48 @@ import React from 'react';
 import { Ionicons } from '@expo/vector-icons';
 
 import { HapticTab } from '@/components/haptic-tab';
-import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useAppTheme } from '@/hooks/useAppTheme';
+
+type IconName = React.ComponentProps<typeof Ionicons>['name'];
+
+function icon(active: IconName, inactive: IconName) {
+  return function TabIcon({ color, focused }: { color: string; focused: boolean }) {
+    return <Ionicons name={focused ? active : inactive} size={23} color={color} />;
+  };
+}
 
 export default function TabLayout() {
-  const colorScheme = useColorScheme();
+  const { colors } = useAppTheme();
 
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: '#1B5E20',
-        tabBarInactiveTintColor: '#666',
         headerShown: false,
         tabBarButton: HapticTab,
+        tabBarActiveTintColor: colors.primary,
+        tabBarInactiveTintColor: colors.textSubtle,
+        tabBarLabelStyle: { fontSize: 11, fontWeight: '600' },
+        // Pas de hauteur fixe : React Navigation ajoute lui-même la zone de sécurité
+        // (barre gestuelle Android en edge-to-edge, encoche iOS).
         tabBarStyle: {
-          backgroundColor: '#FFFEF7',
-          borderTopColor: '#E8DCC0',
-          borderTopWidth: 2,
-          height: 60,
-          paddingBottom: 8,
-          paddingTop: 8,
+          backgroundColor: colors.surface,
+          borderTopColor: colors.border,
         },
-      }}>
+      }}
+    >
+      <Tabs.Screen name="index" options={{ title: 'Accueil', tabBarIcon: icon('home', 'home-outline') }} />
+      <Tabs.Screen name="explore" options={{ title: 'Coran', tabBarIcon: icon('book', 'book-outline') }} />
       <Tabs.Screen
-        name="index"
-        options={{
-          title: 'Home',
-          tabBarIcon: ({ color }) => <Ionicons name="home" size={24} color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="explore"
-        options={{
-          title: 'Quran',
-          tabBarIcon: ({ color }) => <Ionicons name="book" size={24} color={color} />,
-        }}
+        name="tafsir"
+        options={{ title: 'Tafsir', tabBarIcon: icon('chatbubbles', 'chatbubbles-outline') }}
       />
       <Tabs.Screen
         name="hafiz"
-        options={{
-          title: 'Hafiz',
-          tabBarIcon: ({ color }) => <Ionicons name="person" size={24} color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="tafsir"
-        options={{
-          title: 'Tafsir',
-          tabBarIcon: ({ color }) => <Ionicons name="library" size={24} color={color} />,
-        }}
+        options={{ title: 'Récitateurs', tabBarIcon: icon('mic', 'mic-outline') }}
       />
       <Tabs.Screen
         name="settings"
-        options={{
-          title: 'Paramètres',
-          tabBarIcon: ({ color }) => <Ionicons name="settings" size={24} color={color} />,
-        }}
+        options={{ title: 'Réglages', tabBarIcon: icon('options', 'options-outline') }}
       />
     </Tabs>
   );

@@ -29,11 +29,7 @@ export class EmergencyCleanup {
         await AsyncStorage.multiRemove(quranKeys);
       }
 
-      // 2. En cas d'échec, vider complètement AsyncStorage
-      if (quranKeys.length === 0) {
-        console.log('Nettoyage complet d\'AsyncStorage...');
-        await AsyncStorage.clear();
-      }
+      // Ne jamais vider tout AsyncStorage : favoris, progression et réglages y sont stockés.
 
       console.log('✅ NETTOYAGE D\'URGENCE TERMINÉ');
       return true;
