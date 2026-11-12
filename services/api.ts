@@ -4,6 +4,7 @@ import { API_CONFIG } from '../config/api';
 
 import { withSurahNames } from '@/utils/surahNames';
 import { offlineReader, saveTextLocally } from '@/services/offlineService';
+import { quranPublicApi } from '@/services/quranPublicApi';
 
 const fixVerse = (v: Verse): Verse => (v?.surah ? { ...v, surah: withSurahNames(v.surah) } : v);
 const fixSurah = <T extends Surah & { verses?: Verse[] }>(s: T): T => {
@@ -12,6 +13,26 @@ const fixSurah = <T extends Surah & { verses?: Verse[] }>(s: T): T => {
 };
 
 const API_BASE_URL = API_CONFIG.BACKEND_URL;
+const BACKEND_TIMEOUT_MS = 6000;
+let backendDownUntil = 0;
+
+/**
+ * Backend d'abord, puis Quran.com (l'app marche partout), puis les fichiers
+ * enregistrés sur le téléphone (hors ligne).
+ */
+async function withFallback<T>(primary: () => Promise<T>, publicSource: () => Promise<T>, offline: () => T | null): Promise<T> {
+  try {
+    return await primary();
+  } catch (backendError) {
+    try {
+      return await publicSource();
+    } catch {
+      const local = offline();
+      if (local) return local;
+      throw backendError;
+    }
+  }
+}
 
 interface ApiResponse<T> {
   success: boolean;
@@ -42,8 +63,21 @@ class QuranApiService {
       throw new Error('Aucune donnée disponible en mode hors ligne');
     }
 
+    // Backend injoignable récemment : on ne le réessaie pas avant 5 min
+    if (Date.now() < backendDownUntil) throw new Error('Backend indisponible');
+
     try {
-      const response = await fetch(`${API_BASE_URL}${endpoint}`);
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), BACKEND_TIMEOUT_MS);
+      let response: Response;
+      try {
+        response = await fetch(`${API_BASE_URL}${endpoint}`, { signal: controller.signal });
+      } catch (networkError) {
+        backendDownUntil = Date.now() + 5 * 60_000;
+        throw networkError;
+      } finally {
+        clearTimeout(timer);
+      }
 
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
@@ -128,55 +162,77 @@ class QuranApiService {
   }
 
   async getSurahs(): Promise<Surah[]> {
-    try {
-      const list = (await this.fetchApi<Surah[]>('/surahs', CACHE_KEYS.SURAHS, 7 * 24 * 60 * 60 * 1000)).map(
-        withSurahNames
-      ); // Cache 7 jours
-      saveTextLocally('list', list);
-      return list;
-    } catch (e) {
-      const local = offlineReader.surahs();
-      if (local?.length) return local.map(withSurahNames);
-      throw e;
-    }
+    const list = await withFallback(
+      () => this.fetchApi<Surah[]>('/surahs', CACHE_KEYS.SURAHS, 7 * 24 * 60 * 60 * 1000), // Cache 7 jours
+      async () => {
+        const fresh = await quranPublicApi.surahs();
+        await CacheService.set(CACHE_KEYS.SURAHS, fresh, 7 * 24 * 60 * 60 * 1000);
+        return fresh;
+      },
+      () => offlineReader.surahs()
+    );
+    const named = list.map(withSurahNames);
+    saveTextLocally('list', named);
+    return named;
   }
 
   async getSurah(id: number): Promise<Surah & { verses: Verse[] }> {
-    try {
-      const surah = fixSurah(await this.fetchApi<Surah & { verses: Verse[] }>(`/surahs/${id}`, CACHE_KEYS.VERSES(id)));
-      if (surah?.verses?.length) saveTextLocally(surah.number ?? id, surah.verses);
-      return surah;
-    } catch (e) {
-      // Hors ligne : on reconstitue la sourate depuis les fichiers locaux
-      const verses = offlineReader.verses(id);
-      const info = offlineReader.surahs()?.find((s) => s.number === id || s.id === id);
-      if (verses?.length && info) return fixSurah({ ...info, verses });
-      throw e;
-    }
+    const surah = fixSurah(
+      await withFallback(
+        () => this.fetchApi<Surah & { verses: Verse[] }>(`/surahs/${id}`, CACHE_KEYS.VERSES(id)),
+        async () => {
+          const [info, verses] = await Promise.all([quranPublicApi.surah(id), quranPublicApi.verses(id)]);
+          return { ...info, verses };
+        },
+        () => {
+          const verses = offlineReader.verses(id);
+          const info = offlineReader.surahs()?.find((x) => x.number === id || x.id === id);
+          return verses?.length && info ? { ...info, verses } : null;
+        }
+      )
+    );
+    if (surah?.verses?.length) saveTextLocally(surah.number ?? id, surah.verses);
+    return surah;
   }
 
   async getSurahByNumber(number: number): Promise<Surah & { verses: Verse[] }> {
-    return fixSurah(await this.fetchApi<Surah & { verses: Verse[] }>(`/surahs/number/${number}`, `surah_number_${number}`));
+    return this.getSurah(number);
   }
 
   async getVersesBySurah(surahId: number): Promise<Verse[]> {
-    try {
-      const verses = (await this.fetchApi<Verse[]>(`/verses/surah/${surahId}`, CACHE_KEYS.VERSES_LIST(surahId))).map(fixVerse);
-      if (verses.length) saveTextLocally(surahId, verses);
-      return verses;
-    } catch (e) {
-      const local = offlineReader.verses(surahId);
-      if (local?.length) return local.map(fixVerse);
-      throw e;
-    }
+    const verses = (
+      await withFallback(
+        () => this.fetchApi<Verse[]>(`/verses/surah/${surahId}`, CACHE_KEYS.VERSES_LIST(surahId)),
+        async () => {
+          const fresh = await quranPublicApi.verses(surahId);
+          await CacheService.set(CACHE_KEYS.VERSES_LIST(surahId), fresh);
+          return fresh;
+        },
+        () => offlineReader.verses(surahId)
+      )
+    ).map(fixVerse);
+    if (verses.length) saveTextLocally(surahId, verses);
+    return verses;
   }
 
   async getVerse(id: number): Promise<Verse> {
-    return fixVerse(await this.fetchApi<Verse>(`/verses/${id}`, `verse_${id}`));
+    return fixVerse(
+      await withFallback(
+        () => this.fetchApi<Verse>(`/verses/${id}`, `verse_${id}`),
+        () => quranPublicApi.verseByGlobal(id),
+        () => null
+      )
+    );
   }
 
   async getVerseByGlobalNumber(globalNumber: number): Promise<Verse> {
-    return fixVerse(await this.fetchApi<Verse>(`/verses/global/${globalNumber}`, `verse_global_${globalNumber}`));
+    return fixVerse(
+      await withFallback(
+        () => this.fetchApi<Verse>(`/verses/global/${globalNumber}`, `verse_global_${globalNumber}`),
+        () => quranPublicApi.verseByGlobal(globalNumber),
+        () => null
+      )
+    );
   }
 
   async searchSurahs(query: string): Promise<Surah[]> {
