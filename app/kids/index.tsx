@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
 import { KIDS_RECITER_ID, KIDS_SURAHS, kidsColor } from '@/utils/kidsContent';
+import { KIDS_DUAS, kidsAudioCoverage } from '@/utils/kidsLearning';
 import { useKidsStore } from '@/stores/kidsStore';
 import { popularReciters } from '@/stores/reciterStore';
 import { downloadKey, useOfflineStore } from '@/stores/offlineStore';
@@ -45,7 +46,9 @@ export default function KidsHome() {
     router.replace('/(tabs)');
   };
 
-  const totalStars = KIDS_SURAHS.reduce((sum, n) => sum + (stars[n] ?? 0), 0);
+  const lettersHeard = useKidsStore((s) => s.lettersHeard.length);
+  const duasHeard = useKidsStore((s) => s.duasHeard.length);
+  const totalStars = KIDS_SURAHS.reduce((sum, n) => sum + (stars[n] ?? 0), 0) + lettersHeard + duasHeard;
 
   return (
     <View style={{ flex: 1, backgroundColor: BG }}>
@@ -68,6 +71,32 @@ export default function KidsHome() {
           <Text style={styles.starsText}>{totalStars}</Text>
         </View>
 
+        <View style={styles.sections}>
+          <Tap
+            haptic
+            onPress={() => router.push('/kids/alphabet')}
+            accessibilityRole="button"
+            accessibilityLabel={`Les lettres, ${lettersHeard} sur 28`}
+            style={[styles.section, { backgroundColor: '#CFE3F6' }]}
+          >
+            <Text style={[styles.sectionGlyph, { color: '#123A5C' }]}>ا ب ت</Text>
+            <Text style={[styles.sectionTitle, { color: '#123A5C' }]}>Les lettres</Text>
+            <Text style={[styles.sectionSub, { color: '#123A5C' }]}>{lettersHeard}/28 ★</Text>
+          </Tap>
+          <Tap
+            haptic
+            onPress={() => router.push('/kids/invocations')}
+            accessibilityRole="button"
+            accessibilityLabel={`Mes invocations, ${duasHeard} sur ${KIDS_DUAS.length}`}
+            style={[styles.section, { backgroundColor: '#DDD3F2' }]}
+          >
+            <Ionicons name="moon" size={40} color="#33215E" />
+            <Text style={[styles.sectionTitle, { color: '#33215E' }]}>Mes invocations</Text>
+            <Text style={[styles.sectionSub, { color: '#33215E' }]}>{duasHeard}/{KIDS_DUAS.length} ★</Text>
+          </Tap>
+        </View>
+
+        <Text style={styles.gridTitle}>Mes petites sourates</Text>
         <View style={styles.grid}>
           {KIDS_SURAHS.map((n, i) => {
             const color = kidsColor(i);
@@ -121,6 +150,9 @@ function ParentPanel({ visible, onClose }: { visible: boolean; onClose: () => vo
   const resetProgress = useKidsStore((s) => s.resetProgress);
   const downloads = useOfflineStore((s) => s.downloads);
   const reciter = popularReciters.find((r) => r.id === KIDS_RECITER_ID)!;
+  const coverage = kidsAudioCoverage();
+  const lettersHeard = useKidsStore((s) => s.lettersHeard.length);
+  const duasHeard = useKidsStore((s) => s.duasHeard.length);
 
   const offline = KIDS_SURAHS.filter((n) => downloads[downloadKey(KIDS_RECITER_ID, n)]?.status === 'done').length;
   const downloading = KIDS_SURAHS.some((n) => downloads[downloadKey(KIDS_RECITER_ID, n)]?.status === 'downloading');
@@ -150,11 +182,11 @@ function ParentPanel({ visible, onClose }: { visible: boolean; onClose: () => vo
           </Tap>
         </View>
 
-        <Text style={styles.section}>MODE D’ÉCOUTE</Text>
+        <Text style={styles.sectionLabel}>MODE D’ÉCOUTE</Text>
         {option('repeat', 'Écoute et répète', 'Chaque verset est récité 3 fois, avec un silence pour que l’enfant répète.')}
         {option('listen', 'Écoute seule', 'Chaque verset est récité 3 fois, sans pause.')}
 
-        <Text style={styles.section}>HORS LIGNE</Text>
+        <Text style={styles.sectionLabel}>HORS LIGNE</Text>
         <Tap
           onPress={() => downloadSurahs(reciter, KIDS_SURAHS)}
           disabled={downloading || offline === KIDS_SURAHS.length}
@@ -175,7 +207,18 @@ function ParentPanel({ visible, onClose }: { visible: boolean; onClose: () => vo
           </View>
         </Tap>
 
-        <Text style={styles.section}>PROGRÈS</Text>
+        <Text style={styles.sectionLabel}>ENREGISTREMENTS</Text>
+        <View style={[styles.option, { borderColor: '#E6DFCF', backgroundColor: '#fff' }]}>
+          <Ionicons name="mic-outline" size={22} color="#12664B" />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.optionTitle}>
+              Lettres {coverage.letters}/{coverage.lettersTotal} · Invocations {coverage.duas}/{coverage.duasTotal}
+            </Text>
+            <Text style={styles.optionSub}>Les sons manquants s’ajouteront avec les prochaines mises à jour.</Text>
+          </View>
+        </View>
+
+        <Text style={styles.sectionLabel}>PROGRÈS</Text>
         <View style={[styles.option, { borderColor: '#E6DFCF', backgroundColor: '#fff', flexDirection: 'column', alignItems: 'stretch', gap: 10 }]}>
           {KIDS_SURAHS.map((n) => (
             <View key={n} style={{ flexDirection: 'row', alignItems: 'center' }}>
@@ -188,6 +231,9 @@ function ParentPanel({ visible, onClose }: { visible: boolean; onClose: () => vo
             </View>
           ))}
         </View>
+        <Text style={[styles.optionSub, { marginTop: 4 }]}>
+          Lettres écoutées : {lettersHeard}/28 · Invocations apprises : {duasHeard}/{KIDS_DUAS.length}
+        </Text>
         <Tap onPress={resetProgress} style={{ alignSelf: 'center', padding: Spacing.md, marginTop: Spacing.sm }}>
           <Text style={{ color: '#B3261E', fontWeight: '600' }}>Remettre les étoiles à zéro</Text>
         </Tap>
@@ -219,7 +265,13 @@ const styles = StyleSheet.create({
     marginTop: Spacing.lg,
   },
   starsText: { fontSize: 20, fontWeight: '800', color: '#5A3F06' },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 14, paddingHorizontal: Spacing.xl, marginTop: Spacing.xl },
+  sections: { flexDirection: 'row', gap: 14, paddingHorizontal: Spacing.xl, marginTop: Spacing.xl },
+  section: { flex: 1, minHeight: 150, borderRadius: 28, padding: 16, justifyContent: 'space-between' },
+  sectionGlyph: { fontFamily: ArabicFonts.bold, fontSize: 34, lineHeight: 48, textAlign: 'right' },
+  sectionTitle: { fontSize: 19, fontWeight: '800' },
+  sectionSub: { fontSize: 14, fontWeight: '700', opacity: 0.8 },
+  gridTitle: { fontSize: 20, fontWeight: '800', color: INK, paddingHorizontal: Spacing.xl, marginTop: Spacing.xxl },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 14, paddingHorizontal: Spacing.xl, marginTop: Spacing.md },
   card: { width: '47.5%', minHeight: 176, borderRadius: 28, padding: 16, justifyContent: 'space-between' },
   cardArabic: { fontFamily: ArabicFonts.bold, fontSize: 30, lineHeight: 52, textAlign: 'right' },
   cardTitle: { fontSize: 19, fontWeight: '800' },
@@ -236,7 +288,7 @@ const styles = StyleSheet.create({
   },
   panelTitle: { fontSize: 26, fontWeight: '700', color: INK },
   close: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
-  section: { fontSize: 11, fontWeight: '700', letterSpacing: 1.2, color: '#5E6863', marginTop: Spacing.xxl, marginBottom: Spacing.sm },
+  sectionLabel: { fontSize: 11, fontWeight: '700', letterSpacing: 1.2, color: '#5E6863', marginTop: Spacing.xxl, marginBottom: Spacing.sm },
   option: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, borderWidth: 1.5, borderRadius: Radius.lg, padding: Spacing.lg, marginBottom: Spacing.sm },
   optionTitle: { fontSize: 15, fontWeight: '600', color: INK },
   optionSub: { fontSize: 13, color: '#5E6863' },

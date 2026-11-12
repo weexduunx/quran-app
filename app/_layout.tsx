@@ -70,6 +70,9 @@ export default function RootLayout() {
         <Stack.Screen name="onboarding" options={{ animation: 'fade', gestureEnabled: false }} />
         <Stack.Screen name="kids/index" options={{ animation: 'fade', gestureEnabled: false }} />
         <Stack.Screen name="kids/[surah]" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="kids/alphabet" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="kids/lettre/[n]" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="kids/invocations" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="surah/[id]" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="bookmarks" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="downloads" options={{ animation: 'slide_from_right' }} />

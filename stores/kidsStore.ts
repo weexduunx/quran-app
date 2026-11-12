@@ -12,10 +12,15 @@ interface KidsState {
   mode: KidsMode;
   /** L'app reste dans l'espace enfants, même après redémarrage, jusqu'à la sortie parent */
   locked: boolean;
+  /** Lettres et invocations déjà écoutées (une étoile chacune) */
+  lettersHeard: number[];
+  duasHeard: number[];
 
   completeSession: (surah: number) => number;
   setMode: (mode: KidsMode) => void;
   setLocked: (locked: boolean) => void;
+  markLetter: (n: number) => void;
+  markDua: (n: number) => void;
   resetProgress: () => void;
 }
 
@@ -26,6 +31,8 @@ export const useKidsStore = create<KidsState>()(
       sessions: {},
       mode: 'repeat',
       locked: false,
+      lettersHeard: [],
+      duasHeard: [],
 
       /** Une étoile par séance terminée, jusqu'à 3. Renvoie le nouveau total d'étoiles. */
       completeSession: (surah) => {
@@ -38,7 +45,9 @@ export const useKidsStore = create<KidsState>()(
       },
       setMode: (mode) => set({ mode }),
       setLocked: (locked) => set({ locked }),
-      resetProgress: () => set({ stars: {}, sessions: {} }),
+      markLetter: (n) => set((s) => (s.lettersHeard.includes(n) ? s : { lettersHeard: [...s.lettersHeard, n] })),
+      markDua: (n) => set((s) => (s.duasHeard.includes(n) ? s : { duasHeard: [...s.duasHeard, n] })),
+      resetProgress: () => set({ stars: {}, sessions: {}, lettersHeard: [], duasHeard: [] }),
     }),
     { name: 'kids-store', storage: createJSONStorage(() => AsyncStorage) }
   )
