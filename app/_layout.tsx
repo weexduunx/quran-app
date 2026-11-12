@@ -68,6 +68,8 @@ export default function RootLayout() {
       <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.background } }}>
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="onboarding" options={{ animation: 'fade', gestureEnabled: false }} />
+        <Stack.Screen name="kids/index" options={{ animation: 'fade', gestureEnabled: false }} />
+        <Stack.Screen name="kids/[surah]" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="surah/[id]" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="bookmarks" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="downloads" options={{ animation: 'slide_from_right' }} />

@@ -6,6 +6,7 @@ import * as Notifications from 'expo-notifications';
 import { reminderService } from '@/services/reminderService';
 import { useSettingsStore, useSettingsHydrated } from '@/stores/settingsStore';
 import { useProgressStore } from '@/stores/progressStore';
+import { useKidsStore } from '@/stores/kidsStore';
 
 /**
  * Garde les rappels à jour (réglages, ville, dernière lecture, retour au premier
@@ -46,6 +47,8 @@ export function useReminderSync() {
     reminderService.configure();
     const open = (response: Notifications.NotificationResponse | null) => {
       const url = response?.notification.request.content.data?.url;
+      // Pas de sortie de l'espace enfants par une notification
+      if (useKidsStore.getState().locked) return;
       if (typeof url === 'string' && url !== '/') router.push(url as never);
     };
     Notifications.getLastNotificationResponseAsync().then(open).catch(() => {});

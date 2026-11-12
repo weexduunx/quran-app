@@ -209,6 +209,25 @@ export const IslamicHomeScreen: React.FC = () => {
 
       {/* Accès rapides */}
       <View style={styles.section}>
+        <Tap
+          haptic
+          onPress={() => router.push('/kids')}
+          accessibilityRole="button"
+          accessibilityLabel="Espace enfants : mes petites sourates, dès 4 ans"
+          style={styles.kids}
+        >
+          <View style={{ flex: 1 }}>
+            <Text style={styles.kidsOverline}>DÈS 4 ANS</Text>
+            <Text style={styles.kidsTitle}>Espace enfants</Text>
+            <Text style={styles.kidsSub}>Mes petites sourates : écoute et répète, avec des étoiles à gagner.</Text>
+          </View>
+          <View style={styles.kidsPlay}>
+            <Ionicons name="happy-outline" size={30} color="#5A3F06" />
+          </View>
+        </Tap>
+      </View>
+
+      <View style={styles.section}>
         <SectionTitle>Explorer</SectionTitle>
         <View style={styles.quickGrid}>
           <Quick icon="book-outline" title="Le Coran" subtitle="114 sourates" onPress={() => router.push('/explore')} />
@@ -259,6 +278,18 @@ function Quick({ icon, title, subtitle, onPress }: { icon: IconName; title: stri
 }
 
 const styles = StyleSheet.create({
+  kids: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.lg,
+    backgroundColor: '#F8E1A6',
+    borderRadius: Radius.xl,
+    padding: Spacing.xl,
+  },
+  kidsOverline: { fontSize: 11, fontWeight: '800', letterSpacing: 1.2, color: '#7A5A10' },
+  kidsTitle: { fontSize: 22, fontWeight: '800', color: '#3D2A04', marginTop: 2 },
+  kidsSub: { fontSize: 14, lineHeight: 20, color: '#5A3F06', marginTop: 4 },
+  kidsPlay: { width: 60, height: 60, borderRadius: 30, backgroundColor: '#FFF4D6', alignItems: 'center', justifyContent: 'center' },
   header: { paddingHorizontal: Spacing.xl, marginBottom: Spacing.xl },
   section: { paddingHorizontal: Spacing.xl, marginBottom: Spacing.xxl },
   hero: {
