@@ -109,7 +109,9 @@ export function SurahAudioPlayer({
     setEstimated(true);
   }, [status.duration, offsets, player, currentVerseIndex]);
 
-  useEffect(() => player.setPlaybackRate(SPEEDS[speedIndex]), [speedIndex, player]);
+  useEffect(() => {
+    player.setPlaybackRate(SPEEDS[speedIndex]);
+  }, [speedIndex, player]);
 
   useEffect(() => {
     if (!status.didJustFinish) return;

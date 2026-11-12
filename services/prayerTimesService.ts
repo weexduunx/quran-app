@@ -24,7 +24,7 @@ export interface DailyPrayerTimes {
   date: string;
 }
 
-interface Location {
+export interface Location {
   latitude: number;
   longitude: number;
   timezone: string;

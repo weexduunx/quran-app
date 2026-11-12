@@ -14,6 +14,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { useAppTheme } from '@/hooks/useAppTheme';
 import { useQuranStore } from '@/stores/quranStore';
 import { OfflineBanner } from '@/components/OfflineBanner';
+import { useReminderSync } from '@/hooks/useReminderSync';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -23,6 +24,7 @@ export const unstable_settings = {
 
 export default function RootLayout() {
   const { colors, isDark } = useAppTheme();
+  useReminderSync();
   const setOffline = useQuranStore((s) => s.setOffline);
 
   const [fontsLoaded, fontError] = useFonts({
@@ -65,8 +67,10 @@ export default function RootLayout() {
     <ThemeProvider value={navTheme}>
       <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.background } }}>
         <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="onboarding" options={{ animation: 'fade', gestureEnabled: false }} />
         <Stack.Screen name="surah/[id]" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="bookmarks" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="downloads" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="tafsir/[bookId]" options={{ animation: 'slide_from_right' }} />
       </Stack>
       <OfflineBanner />

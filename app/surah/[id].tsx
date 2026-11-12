@@ -29,6 +29,7 @@ import { revelationLabel } from '@/utils/quranMeta';
 import { useAppTheme } from '@/hooks/useAppTheme';
 import { ArabicFonts, Radius, Spacing, Type } from '@/constants/theme';
 import { Button, Chip, IconButton } from '@/components/ui/kit';
+import { DownloadButton } from '@/components/DownloadButton';
 
 type SurahWithVerses = Surah & { verses: Verse[]; revelation_place?: string };
 
@@ -243,6 +244,7 @@ export default function SurahScreen() {
             </Text>
           )}
         </View>
+        <DownloadButton surah={surahId} surahName={surah?.name_transliteration} />
         <IconButton
           icon="text"
           label="Options d'affichage"

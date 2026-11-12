@@ -3,6 +3,7 @@ import { CacheService, CACHE_KEYS } from './cacheService';
 import { API_CONFIG } from '../config/api';
 
 import { withSurahNames } from '@/utils/surahNames';
+import { offlineReader, saveTextLocally } from '@/services/offlineService';
 
 const fixVerse = (v: Verse): Verse => (v?.surah ? { ...v, surah: withSurahNames(v.surah) } : v);
 const fixSurah = <T extends Surah & { verses?: Verse[] }>(s: T): T => {
@@ -127,12 +128,31 @@ class QuranApiService {
   }
 
   async getSurahs(): Promise<Surah[]> {
-    const list = await this.fetchApi<Surah[]>('/surahs', CACHE_KEYS.SURAHS, 7 * 24 * 60 * 60 * 1000); // Cache 7 jours
-    return list.map(withSurahNames);
+    try {
+      const list = (await this.fetchApi<Surah[]>('/surahs', CACHE_KEYS.SURAHS, 7 * 24 * 60 * 60 * 1000)).map(
+        withSurahNames
+      ); // Cache 7 jours
+      saveTextLocally('list', list);
+      return list;
+    } catch (e) {
+      const local = offlineReader.surahs();
+      if (local?.length) return local.map(withSurahNames);
+      throw e;
+    }
   }
 
   async getSurah(id: number): Promise<Surah & { verses: Verse[] }> {
-    return fixSurah(await this.fetchApi<Surah & { verses: Verse[] }>(`/surahs/${id}`, CACHE_KEYS.VERSES(id)));
+    try {
+      const surah = fixSurah(await this.fetchApi<Surah & { verses: Verse[] }>(`/surahs/${id}`, CACHE_KEYS.VERSES(id)));
+      if (surah?.verses?.length) saveTextLocally(surah.number ?? id, surah.verses);
+      return surah;
+    } catch (e) {
+      // Hors ligne : on reconstitue la sourate depuis les fichiers locaux
+      const verses = offlineReader.verses(id);
+      const info = offlineReader.surahs()?.find((s) => s.number === id || s.id === id);
+      if (verses?.length && info) return fixSurah({ ...info, verses });
+      throw e;
+    }
   }
 
   async getSurahByNumber(number: number): Promise<Surah & { verses: Verse[] }> {
@@ -140,8 +160,15 @@ class QuranApiService {
   }
 
   async getVersesBySurah(surahId: number): Promise<Verse[]> {
-    const verses = await this.fetchApi<Verse[]>(`/verses/surah/${surahId}`, CACHE_KEYS.VERSES_LIST(surahId));
-    return verses.map(fixVerse);
+    try {
+      const verses = (await this.fetchApi<Verse[]>(`/verses/surah/${surahId}`, CACHE_KEYS.VERSES_LIST(surahId))).map(fixVerse);
+      if (verses.length) saveTextLocally(surahId, verses);
+      return verses;
+    } catch (e) {
+      const local = offlineReader.verses(surahId);
+      if (local?.length) return local.map(fixVerse);
+      throw e;
+    }
   }
 
   async getVerse(id: number): Promise<Verse> {

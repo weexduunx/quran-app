@@ -16,6 +16,7 @@ import { verseOfTheDay } from '@/utils/quranMeta';
 import { ArabicFonts, Radius, Spacing, Type } from '@/constants/theme';
 import { Card, SectionTitle, Tap, Button } from '@/components/ui/kit';
 import { surahFrenchTitle, surahTransliteration } from '@/utils/surahNames';
+import { findCity } from '@/utils/cities';
 
 type IconName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -40,19 +41,21 @@ export const IslamicHomeScreen: React.FC = () => {
   const readingDays = useProgressStore((s) => s.readingDays);
 
   const [now, setNow] = useState(new Date());
+  const location = useMemo(() => findCity(city), [city]);
   const [prayers, setPrayers] = useState<DailyPrayerTimes>(() =>
-    prayerTimesService.calculatePrayerTimes()
+    prayerTimesService.calculatePrayerTimes(new Date(), location)
   );
   const [dailyVerse, setDailyVerse] = useState<Verse | null>(null);
 
   // 15 s suffisent pour un compte à rebours à la minute — inutile de re-rendre chaque seconde.
   useEffect(() => {
+    setPrayers(prayerTimesService.calculatePrayerTimes(new Date(), location));
     const timer = setInterval(() => {
       setNow(new Date());
-      setPrayers(prayerTimesService.calculatePrayerTimes());
+      setPrayers(prayerTimesService.calculatePrayerTimes(new Date(), location));
     }, 15000);
     return () => clearInterval(timer);
-  }, []);
+  }, [location]);
 
   useEffect(() => {
     const { global } = verseOfTheDay();

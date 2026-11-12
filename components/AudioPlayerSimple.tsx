@@ -64,6 +64,10 @@ const VersePlayer: React.FC<AudioPlayerProps> = ({
   const [speedIndex, setSpeedIndex] = useState(2);
   const [repeatIndex, setRepeatIndex] = useState(0);
   const [continuous, setContinuous] = useState(true);
+  /** Passage à répéter (indices dans `verses`), ou null */
+  const [range, setRange] = useState<{ from: number; to: number } | null>(null);
+  const [passIndex, setPassIndex] = useState(1);
+  const passesDone = useRef(0);
   const [expanded, setExpanded] = useState(true);
   const [seeking, setSeeking] = useState<number | null>(null);
 
@@ -180,6 +184,29 @@ const VersePlayer: React.FC<AudioPlayerProps> = ({
       player.play();
       return;
     }
+    if (range) {
+      if (currentVerseIndex < range.to) {
+        onVerseChange(currentVerseIndex + 1);
+        return;
+      }
+      const passTarget = REPEATS[passIndex];
+      if (passTarget === 0 || passesDone.current + 1 < passTarget) {
+        passesDone.current += 1;
+        if (range.from === currentVerseIndex) {
+          repeatsDone.current = 0;
+          player.seekTo(0);
+          player.play();
+        } else {
+          onVerseChange(range.from);
+        }
+        return;
+      }
+      passesDone.current = 0;
+      wantPlay.current = false;
+      player.seekTo(0);
+      player.pause();
+      return;
+    }
     if (continuous && currentVerseIndex < verses.length - 1) {
       onVerseChange(currentVerseIndex + 1);
     } else {
@@ -188,6 +215,16 @@ const VersePlayer: React.FC<AudioPlayerProps> = ({
       player.pause();
     }
   }, [status.didJustFinish]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const toggleRange = () => {
+    passesDone.current = 0;
+    if (range) {
+      setRange(null);
+      return;
+    }
+    const from = Math.max(0, currentVerseIndex);
+    setRange({ from, to: Math.min(verses.length - 1, from + 4) });
+  };
 
   const togglePlay = useCallback(() => {
     if (status.playing) {
@@ -227,8 +264,10 @@ const VersePlayer: React.FC<AudioPlayerProps> = ({
   const synced = !!audio?.segments.length;
   const busy = loading || (!status.isLoaded && !error) || status.isBuffering;
   const repeatLabel = repeatTarget === 0 ? '∞' : repeatTarget > 1 ? `×${repeatTarget}` : '';
-  const repeatProgress =
-    repeatTarget !== 1 && status.isLoaded
+  const passTarget = REPEATS[passIndex];
+  const repeatProgress = range
+    ? ` · passage ${passesDone.current + 1}${passTarget ? `/${passTarget}` : ''}`
+    : repeatTarget !== 1 && status.isLoaded
       ? ` · ${repeatsDone.current + 1}${repeatTarget ? `/${repeatTarget}` : ''}`
       : '';
 
@@ -376,19 +415,93 @@ const VersePlayer: React.FC<AudioPlayerProps> = ({
       </View>
 
       {expanded && (
-        <Tap
-          onPress={() => setContinuous((v) => !v)}
-          accessibilityRole="switch"
-          accessibilityState={{ checked: continuous }}
-          style={styles.continuousRow}
-        >
-          <Ionicons name={continuous ? 'checkmark-circle' : 'ellipse-outline'} size={18} color={continuous ? c.gold : c.muted} />
-          <Text style={[Type.caption, { color: c.muted, marginLeft: 6 }]}>Enchaîner les versets</Text>
-        </Tap>
+        <View style={styles.optionsRow}>
+          {!range && (
+            <Tap
+              onPress={() => setContinuous((v) => !v)}
+              accessibilityRole="switch"
+              accessibilityState={{ checked: continuous }}
+              style={styles.continuousRow}
+            >
+              <Ionicons name={continuous ? 'checkmark-circle' : 'ellipse-outline'} size={18} color={continuous ? c.gold : c.muted} />
+              <Text style={[Type.caption, { color: c.muted, marginLeft: 6 }]}>Enchaîner les versets</Text>
+            </Tap>
+          )}
+          <Tap
+            onPress={toggleRange}
+            accessibilityRole="switch"
+            accessibilityState={{ checked: !!range }}
+            style={styles.continuousRow}
+          >
+            <Ionicons name={range ? 'checkmark-circle' : 'ellipse-outline'} size={18} color={range ? c.gold : c.muted} />
+            <Text style={[Type.caption, { color: range ? c.text : c.muted, marginLeft: 6 }]}>Répéter un passage</Text>
+          </Tap>
+        </View>
+      )}
+
+      {expanded && range && (
+        <View style={[styles.rangeBox, { backgroundColor: c.soft }]}>
+          <RangeStepper
+            label="Du verset"
+            value={verses[range.from]?.verse_number}
+            onMinus={() => setRange({ from: Math.max(0, range.from - 1), to: range.to })}
+            onPlus={() => setRange({ from: Math.min(range.to, range.from + 1), to: range.to })}
+            color={c}
+          />
+          <RangeStepper
+            label="au verset"
+            value={verses[range.to]?.verse_number}
+            onMinus={() => setRange({ from: range.from, to: Math.max(range.from, range.to - 1) })}
+            onPlus={() => setRange({ from: range.from, to: Math.min(verses.length - 1, range.to + 1) })}
+            color={c}
+          />
+          <Tap
+            haptic
+            onPress={() => {
+              passesDone.current = 0;
+              setPassIndex((i) => (i + 1) % REPEATS.length);
+            }}
+            accessibilityLabel="Nombre de répétitions du passage"
+            style={[styles.pill, { borderColor: c.gold }]}
+          >
+            <Text style={[Type.caption, { color: c.gold, fontWeight: '700' }]}>
+              {REPEATS[passIndex] === 0 ? '∞' : `×${REPEATS[passIndex]}`}
+            </Text>
+          </Tap>
+        </View>
       )}
     </Animated.View>
   );
 };
+
+function RangeStepper({
+  label,
+  value,
+  onMinus,
+  onPlus,
+  color,
+}: {
+  label: string;
+  value?: number;
+  onMinus: () => void;
+  onPlus: () => void;
+  color: { text: string; muted: string; line: string };
+}) {
+  return (
+    <View style={{ alignItems: 'center' }}>
+      <Text style={{ color: color.muted, fontSize: 11 }}>{label}</Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+        <Tap haptic onPress={onMinus} accessibilityLabel={`${label} : moins`} style={styles.rangeBtn}>
+          <Ionicons name="remove" size={18} color={color.text} />
+        </Tap>
+        <Text style={{ color: color.text, fontSize: 17, fontWeight: '700', minWidth: 30, textAlign: 'center' }}>{value}</Text>
+        <Tap haptic onPress={onPlus} accessibilityLabel={`${label} : plus`} style={styles.rangeBtn}>
+          <Ionicons name="add" size={18} color={color.text} />
+        </Tap>
+      </View>
+    </View>
+  );
+}
 
 /**
  * Choisit le lecteur selon le récitateur : verset par verset (avec mot à mot)
@@ -437,5 +550,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   playBtn: { width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center' },
-  continuousRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: Spacing.md },
+  continuousRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', minHeight: 36 },
+  optionsRow: { flexDirection: 'row', justifyContent: 'center', gap: Spacing.xl, marginTop: Spacing.sm },
+  rangeBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderRadius: Radius.lg,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    marginTop: Spacing.sm,
+  },
+  rangeBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
 });

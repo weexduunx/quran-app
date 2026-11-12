@@ -10,6 +10,7 @@
  * (alquran.cloud) : audio uniquement, mots affichés sans synchronisation.
  */
 import type { Reciter } from '@/stores/reciterStore';
+import { offlineReader } from '@/services/offlineService';
 
 const QURAN_COM_API = 'https://api.quran.com/api/v4';
 const QURAN_COM_AUDIO = 'https://verses.quran.com/';
@@ -106,12 +107,25 @@ async function load(reciter: Reciter, surah: number, ayah: number, globalNumber:
 }
 
 export const recitationService = {
-  /** URL d'une sourate entière (récitateurs en mode « sourate ») */
-  surahAudioUrl(reciter: Reciter, surah: number): string | undefined {
+  /** URL distante d'une sourate entière (récitateurs en mode « sourate ») */
+  remoteSurahAudioUrl(reciter: Reciter, surah: number): string | undefined {
     return reciter.surahAudioBase ? `${reciter.surahAudioBase}${String(surah).padStart(3, '0')}.mp3` : undefined;
   },
 
-  getVerseAudio(reciter: Reciter, surah: number, ayah: number, globalNumber: number) {
+  /** Sourate entière : fichier téléchargé s'il existe, sinon l'URL distante */
+  surahAudioUrl(reciter: Reciter, surah: number): string | undefined {
+    if (!reciter.surahAudioBase) return undefined;
+    return offlineReader.surahAudio(reciter.id, surah) ?? this.remoteSurahAudioUrl(reciter, surah);
+  },
+
+  getVerseAudio(reciter: Reciter, surah: number, ayah: number, globalNumber: number): Promise<VerseAudio> {
+    // Verset téléchargé : lecture locale, mots et horodatages compris
+    const local = offlineReader.verseAudio(reciter.id, surah, ayah);
+    if (local) return Promise.resolve(local);
+    return this.getRemoteVerseAudio(reciter, surah, ayah, globalNumber);
+  },
+
+  getRemoteVerseAudio(reciter: Reciter, surah: number, ayah: number, globalNumber: number) {
     const key = `${reciter.id}|${surah}:${ayah}`;
     let p = cache.get(key);
     if (!p) {

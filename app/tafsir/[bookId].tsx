@@ -102,7 +102,9 @@ function TextTafsir({
   const [attempt, setAttempt] = useState(0);
   const scrollRef = useRef<ScrollView>(null);
 
-  useEffect(() => setPreferred(book.id), [book.id, setPreferred]);
+  useEffect(() => {
+    setPreferred(book.id);
+  }, [book.id, setPreferred]);
 
   useEffect(() => {
     let alive = true;
@@ -290,7 +292,9 @@ function AudioTafsir({
     setAudioModeAsync({ playsInSilentMode: true, shouldPlayInBackground: true, interruptionModeAndroid: 'duckOthers' }).catch(() => {});
   }, []);
 
-  useEffect(() => setTrackIndex(0), [surah, book.id]);
+  useEffect(() => {
+    setTrackIndex(0);
+  }, [surah, book.id]);
 
   useEffect(() => {
     if (!track) return;
