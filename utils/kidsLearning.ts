@@ -8,6 +8,7 @@
 import type { ComponentProps } from 'react';
 import type { Ionicons } from '@expo/vector-icons';
 import { KIDS_AUDIO } from '@/utils/kidsAudioManifest';
+import type { KidsSpeech } from '@/hooks/useKidsSound';
 
 type IconName = ComponentProps<typeof Ionicons>['name'];
 
@@ -88,6 +89,18 @@ export type LetterPart = 'nom' | 'voyelles' | 'mot';
 export const letterAudio = (l: KidsLetter, part: LetterPart): number | undefined =>
   KIDS_AUDIO[`lettres/${String(l.n).padStart(2, '0')}-${l.slug}-${part}`];
 
+/** Voix de synthèse provisoire, en attendant l'enregistrement de l'enseignant */
+export const letterSpeech = (l: KidsLetter, part: LetterPart): KidsSpeech => ({
+  language: 'ar',
+  rate: part === 'mot' ? 0.7 : 0.6,
+  text:
+    part === 'nom'
+      ? l.n === 1 ? 'أَلِفْ' : l.nameAr // sans voyelles, « ألف » serait lu « alf » (mille)
+      : part === 'voyelles'
+        ? (l.n === 1 ? ['أَ', 'إِ', 'أُ'] : l.vowels).join('، ')
+        : l.word,
+});
+
 // ---------------------------------------------------------------------------
 // Invocations
 // ---------------------------------------------------------------------------
@@ -129,6 +142,13 @@ export const KIDS_DUAS: KidsDua[] = [
 export type DuaLang = 'ar' | 'fr' | 'wo';
 export const duaAudio = (d: KidsDua, lang: DuaLang): number | undefined =>
   KIDS_AUDIO[`invocations/${String(d.n).padStart(2, '0')}-${d.slug}-${lang}`];
+
+/** Voix de synthèse provisoire (pas de voix wolof sur les téléphones) */
+export const duaSpeech = (d: KidsDua, lang: DuaLang): KidsSpeech | undefined => {
+  if (lang === 'ar') return { language: 'ar', rate: 0.65, text: d.ar };
+  if (lang === 'fr') return { language: 'fr-FR', rate: 0.85, text: `${d.moment}, on dit : ${d.fr}` };
+  return undefined;
+};
 
 /** Combien d'enregistrements sont déjà dans l'app (pour l'espace parents) */
 export function kidsAudioCoverage() {

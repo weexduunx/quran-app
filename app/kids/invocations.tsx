@@ -4,9 +4,9 @@ import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
-import { KIDS_DUAS, duaAudio, DuaLang } from '@/utils/kidsLearning';
+import { KIDS_DUAS, duaAudio, duaSpeech, DuaLang } from '@/utils/kidsLearning';
 import { useKidsStore } from '@/stores/kidsStore';
-import { useKidsSound } from '@/hooks/useKidsSound';
+import { useKidsSound, useSpeechSupport } from '@/hooks/useKidsSound';
 import { ArabicFonts, Spacing } from '@/constants/theme';
 import { Tap } from '@/components/ui/kit';
 
@@ -42,7 +42,11 @@ export default function KidsInvocations() {
     sound.stop();
     setIndex(i);
   };
-  const play = (lang: DuaLang) => sound.play(`${d.n}-${lang}`, duaAudio(d, lang));
+  const voiceAr = useSpeechSupport('ar');
+  const voiceFr = useSpeechSupport('fr');
+  const play = (lang: DuaLang) => sound.play(`${d.n}-${lang}`, duaAudio(d, lang), duaSpeech(d, lang));
+  const canPlay = (lang: DuaLang) =>
+    !!duaAudio(d, lang) || (lang === 'ar' ? voiceAr !== false : lang === 'fr' ? voiceFr !== false : false);
   const isPlaying = (lang: DuaLang) => sound.playing === `${d.n}-${lang}`;
 
   return (
@@ -104,7 +108,7 @@ export default function KidsInvocations() {
         <Text style={styles.label}>ÉCOUTER EN</Text>
         <View style={styles.langs}>
           {LANGS.map((lang) => {
-            const available = !!duaAudio(d, lang.id);
+            const available = canPlay(lang.id);
             const on = isPlaying(lang.id);
             return (
               <Tap

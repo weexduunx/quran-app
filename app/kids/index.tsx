@@ -214,7 +214,7 @@ function ParentPanel({ visible, onClose }: { visible: boolean; onClose: () => vo
             <Text style={styles.optionTitle}>
               Lettres {coverage.letters}/{coverage.lettersTotal} · Invocations {coverage.duas}/{coverage.duasTotal}
             </Text>
-            <Text style={styles.optionSub}>Les sons manquants s’ajouteront avec les prochaines mises à jour.</Text>
+            <Text style={styles.optionSub}>En attendant les enregistrements de l’enseignant, la voix du téléphone lit les lettres et les invocations (arabe et français). Le wolof arrivera avec les enregistrements.</Text>
           </View>
         </View>
 

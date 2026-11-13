@@ -4,10 +4,10 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
-import { KIDS_LETTERS, letterAudio, LetterPart } from '@/utils/kidsLearning';
+import { KIDS_LETTERS, letterAudio, letterSpeech, LetterPart } from '@/utils/kidsLearning';
 import { kidsColor } from '@/utils/kidsContent';
 import { useKidsStore } from '@/stores/kidsStore';
-import { useKidsSound } from '@/hooks/useKidsSound';
+import { useKidsSound, useSpeechSupport } from '@/hooks/useKidsSound';
 import { ArabicFonts, Spacing } from '@/constants/theme';
 import { Tap } from '@/components/ui/kit';
 
@@ -26,14 +26,16 @@ export default function KidsLetter() {
     if (key === `${l.n}-nom`) markLetter(l.n);
   });
 
-  const play = (part: LetterPart) => sound.play(`${l.n}-${part}`, letterAudio(l, part));
-  const hasAudio = (part: LetterPart) => !!letterAudio(l, part);
+  const voice = useSpeechSupport('ar');
+  const play = (part: LetterPart) => sound.play(`${l.n}-${part}`, letterAudio(l, part), letterSpeech(l, part));
+  const recorded = (part: LetterPart) => !!letterAudio(l, part);
+  // Voix de synthèse : utilisable sauf si l'appareil n'a vraiment pas d'arabe
+  const hasAudio = (part: LetterPart) => recorded(part) || voice !== false;
 
   // La lettre se fait entendre dès l'ouverture
   useEffect(() => {
     const t = setTimeout(() => {
-      const src = letterAudio(l, 'nom');
-      if (src) sound.play(`${l.n}-nom`, src);
+      if (hasAudio('nom')) play('nom');
     }, 350);
     return () => clearTimeout(t);
   }, [l.n]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -105,8 +107,10 @@ export default function KidsLetter() {
           <Text style={styles.wordAr}>{l.word}</Text>
         </Tap>
 
-        {!hasAudio('nom') && (
+        {!hasAudio('nom') ? (
           <Text style={styles.pending}>Le son de cette lettre arrive bientôt.</Text>
+        ) : (
+          !recorded('nom') && <Text style={styles.pending}>Voix provisoire du téléphone.</Text>
         )}
       </ScrollView>
 
