@@ -229,6 +229,24 @@ export const IslamicHomeScreen: React.FC = () => {
         </Tap>
       </View>
 
+      {/* Bêta : recueillir l'avis des premiers utilisateurs */}
+      <View style={styles.section}>
+        <Card onPress={() => router.push({ pathname: '/feedback', params: { from: 'accueil' } })} tone="soft">
+          <View style={styles.rowBetween}>
+            <View style={{ flex: 1 }}>
+              <Text style={[Type.caption, { color: colors.gold, fontWeight: '800', letterSpacing: 1 }]}>VERSION BÊTA</Text>
+              <Text style={[Type.headline, { color: colors.text, marginTop: 2 }]}>Votre avis compte</Text>
+              <Text style={[Type.caption, { color: colors.textMuted, marginTop: 2 }]}>
+                Dites-nous ce qui vous plaît et ce qu’il faut améliorer.
+              </Text>
+            </View>
+            <View style={[styles.statIcon, { backgroundColor: colors.goldSoft, marginLeft: Spacing.md }]}>
+              <Ionicons name="chatbubble-ellipses" size={18} color={colors.gold} />
+            </View>
+          </View>
+        </Card>
+      </View>
+
       <View style={styles.section}>
         <SectionTitle>Explorer</SectionTitle>
         <View style={styles.quickGrid}>

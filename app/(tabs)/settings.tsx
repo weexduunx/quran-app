@@ -277,6 +277,17 @@ export default function SettingsScreen() {
           )}
         </Group>
 
+        <SectionTitle style={styles.sectionGap}>Version bêta</SectionTitle>
+        <Group>
+          <Link
+            icon="chatbubble-ellipses-outline"
+            title="Donner mon avis"
+            subtitle="Une note, un problème, une idée : tout nous aide"
+            onPress={() => router.push({ pathname: '/feedback', params: { from: 'reglages' } })}
+            last
+          />
+        </Group>
+
         <SectionTitle style={styles.sectionGap}>Données</SectionTitle>
         <Group>
           <Link

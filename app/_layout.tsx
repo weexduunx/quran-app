@@ -15,6 +15,7 @@ import { useAppTheme } from '@/hooks/useAppTheme';
 import { useQuranStore } from '@/stores/quranStore';
 import { OfflineBanner } from '@/components/OfflineBanner';
 import { useReminderSync } from '@/hooks/useReminderSync';
+import { feedbackService } from '@/services/feedbackService';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -41,7 +42,10 @@ export default function RootLayout() {
 
   useEffect(() => {
     const unsubscribe = NetInfo.addEventListener((state) => {
-      setOffline(state.isConnected === false || state.isInternetReachable === false);
+      const offline = state.isConnected === false || state.isInternetReachable === false;
+      setOffline(offline);
+      // Avis bêta écrits hors ligne : envoyés dès que la connexion revient
+      if (!offline) feedbackService.flush();
     });
     return unsubscribe;
   }, [setOffline]);
@@ -77,6 +81,7 @@ export default function RootLayout() {
         <Stack.Screen name="bookmarks" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="downloads" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="prayer-settings" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="feedback" options={{ animation: 'slide_from_bottom' }} />
         <Stack.Screen name="tafsir/[bookId]" options={{ animation: 'slide_from_right' }} />
       </Stack>
       <OfflineBanner />
