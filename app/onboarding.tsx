@@ -6,6 +6,8 @@ import { Ionicons } from '@expo/vector-icons';
 
 import { BrandMark, APP_NAME } from '@/components/BrandMark';
 import { CityPicker } from '@/components/CityPicker';
+import { placeLabel } from '@/utils/cities';
+import { PRAYER_METHODS } from '@/services/prayerTimesService';
 import { Tap } from '@/components/ui/kit';
 import { useAppTheme } from '@/hooks/useAppTheme';
 import { useSettingsStore } from '@/stores/settingsStore';
@@ -249,9 +251,11 @@ function Personalize({ topInset }: { topInset: number }) {
   const { colors } = useAppTheme();
   const selectedId = useReciterStore((s) => s.getSelectedReciter().id);
   const setReciter = useReciterStore((s) => s.setSelectedReciter);
-  const city = useSettingsStore((s) => s.city);
-  const setCity = useSettingsStore((s) => s.setCity);
+  const place = useSettingsStore((s) => s.place);
+  const setPlace = useSettingsStore((s) => s.setPlace);
+  const method = useSettingsStore((s) => s.prayerCalc.method);
   const [picker, setPicker] = useState(false);
+  const methodName = PRAYER_METHODS.find((m) => m.id === method)?.name;
 
   return (
     <View style={{ flex: 1, paddingTop: topInset + 56, paddingHorizontal: Spacing.xl }}>
@@ -295,25 +299,27 @@ function Personalize({ topInset }: { topInset: number }) {
       <Tap
         onPress={() => setPicker(true)}
         accessibilityRole="button"
-        accessibilityLabel={`Ville : ${city}. Modifier`}
+        accessibilityLabel={`Lieu : ${placeLabel(place)}. Modifier`}
         style={[styles.voice, { borderColor: colors.border, borderWidth: 1, backgroundColor: colors.surface }]}
       >
         <View style={[styles.miniIcon, { backgroundColor: colors.primarySoft }]}>
           <Ionicons name="location-outline" size={18} color={colors.primary} />
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={[Type.callout, { color: colors.text, fontWeight: '600' }]}>Ville</Text>
-          <Text style={[Type.caption, { color: colors.textMuted }]}>{city}</Text>
+          <Text style={[Type.callout, { color: colors.text, fontWeight: '600' }]}>{placeLabel(place)}</Text>
+          <Text style={[Type.caption, { color: colors.textMuted }]}>
+            {place.source === 'gps' ? 'Position exacte' : 'Ville'} · {methodName}
+          </Text>
         </View>
         <Text style={[Type.callout, { color: colors.primary, fontWeight: '600' }]}>Modifier</Text>
       </Tap>
 
       <CityPicker
         visible={picker}
-        selected={city}
+        selected={place}
         onClose={() => setPicker(false)}
-        onSelect={(name) => {
-          setCity(name);
+        onSelect={(p) => {
+          setPlace(p);
           setPicker(false);
         }}
       />

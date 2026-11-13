@@ -20,6 +20,9 @@ import { ArabicFonts, Radius, Spacing, Type } from '@/constants/theme';
 import { Chip, IconButton, Segmented, SectionTitle, Tap } from '@/components/ui/kit';
 import { CityPicker } from '@/components/CityPicker';
 import { APP_NAME, APP_TAGLINE } from '@/components/BrandMark';
+import { PoweredBy } from '@/components/PoweredBy';
+import { placeLabel } from '@/utils/cities';
+import { PRAYER_METHODS } from '@/services/prayerTimesService';
 import { useOfflineStore } from '@/stores/offlineStore';
 import { reminderService, PRAYER_LABELS } from '@/services/reminderService';
 import type { PrayerKey } from '@/stores/settingsStore';
@@ -196,10 +199,16 @@ export default function SettingsScreen() {
         <SectionTitle style={styles.sectionGap}>Prière & calendrier</SectionTitle>
         <Group>
           <Link
-            icon="location-outline"
-            title="Ville des heures de prière"
-            subtitle={s.city}
+            icon={s.place.source === 'gps' ? 'navigate-outline' : 'location-outline'}
+            title="Lieu des heures de prière"
+            subtitle={placeLabel(s.place)}
             onPress={() => setCityPicker(true)}
+          />
+          <Link
+            icon="options-outline"
+            title="Calcul, ajustements et adhan"
+            subtitle={PRAYER_METHODS.find((m) => m.id === s.prayerCalc.method)?.name}
+            onPress={() => router.push('/prayer-settings')}
           />
           <Stepper
             icon="moon-outline"
@@ -217,7 +226,7 @@ export default function SettingsScreen() {
           <Toggle
             icon="notifications-outline"
             title="Heures de prière"
-            subtitle={`Notification pour ${s.city}`}
+            subtitle={`Notification pour ${placeLabel(s.place)}`}
             value={s.prayerReminders.enabled}
             onChange={() => toggleReminder('prayer')}
             last={!s.prayerReminders.enabled}
@@ -283,12 +292,13 @@ export default function SettingsScreen() {
         <Text style={[Type.caption, { color: colors.textSubtle, textAlign: 'center', marginTop: Spacing.xxl }]}>
           {APP_NAME} · {APP_TAGLINE} — version 1.0.0
         </Text>
+        <PoweredBy />
         <CityPicker
           visible={cityPicker}
-          selected={s.city}
+          selected={s.place}
           onClose={() => setCityPicker(false)}
-          onSelect={(name) => {
-            s.setCity(name);
+          onSelect={(place) => {
+            s.setPlace(place);
             setCityPicker(false);
           }}
         />

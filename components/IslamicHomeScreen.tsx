@@ -16,7 +16,8 @@ import { verseOfTheDay } from '@/utils/quranMeta';
 import { ArabicFonts, Radius, Spacing, Type } from '@/constants/theme';
 import { Card, SectionTitle, Tap, Button } from '@/components/ui/kit';
 import { surahFrenchTitle, surahTransliteration } from '@/utils/surahNames';
-import { findCity } from '@/utils/cities';
+import { placeLabel } from '@/utils/cities';
+import { PoweredBy } from '@/components/PoweredBy';
 
 type IconName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -35,27 +36,27 @@ export const IslamicHomeScreen: React.FC = () => {
   const { colors } = useAppTheme();
   const insets = useSafeAreaInsets();
   const hijriOffset = useSettingsStore((s) => s.hijriOffset);
-  const city = useSettingsStore((s) => s.city);
+  const location = useSettingsStore((s) => s.place);
+  const calc = useSettingsStore((s) => s.prayerCalc);
   const lastRead = useProgressStore((s) => s.lastRead);
   const bookmarksCount = useProgressStore((s) => s.bookmarks.length);
   const readingDays = useProgressStore((s) => s.readingDays);
 
   const [now, setNow] = useState(new Date());
-  const location = useMemo(() => findCity(city), [city]);
   const [prayers, setPrayers] = useState<DailyPrayerTimes>(() =>
-    prayerTimesService.calculatePrayerTimes(new Date(), location)
+    prayerTimesService.calculatePrayerTimes(new Date(), location, calc)
   );
   const [dailyVerse, setDailyVerse] = useState<Verse | null>(null);
 
   // 15 s suffisent pour un compte à rebours à la minute — inutile de re-rendre chaque seconde.
   useEffect(() => {
-    setPrayers(prayerTimesService.calculatePrayerTimes(new Date(), location));
+    setPrayers(prayerTimesService.calculatePrayerTimes(new Date(), location, calc));
     const timer = setInterval(() => {
       setNow(new Date());
-      setPrayers(prayerTimesService.calculatePrayerTimes(new Date(), location));
+      setPrayers(prayerTimesService.calculatePrayerTimes(new Date(), location, calc));
     }, 15000);
     return () => clearInterval(timer);
-  }, [location]);
+  }, [location, calc]);
 
   useEffect(() => {
     const { global } = verseOfTheDay();
@@ -110,10 +111,11 @@ export const IslamicHomeScreen: React.FC = () => {
             style={[StyleSheet.absoluteFill, { borderRadius: Radius.xl }]}
           />
           <View style={styles.heroTop}>
-            <View style={styles.heroPill}>
-              <Ionicons name="location" size={12} color="#fff" />
-              <Text style={styles.heroPillText}>{city}</Text>
-            </View>
+            <Tap onPress={() => router.push('/prayer-settings')} accessibilityRole="button" accessibilityLabel={`Lieu : ${placeLabel(location)}. Réglages des heures de prière`} style={styles.heroPill}>
+              <Ionicons name={location.source === 'gps' ? 'navigate' : 'location'} size={12} color="#fff" />
+              <Text style={styles.heroPillText} numberOfLines={1}>{placeLabel(location)}</Text>
+              <Ionicons name="options-outline" size={12} color="#fff" style={{ marginLeft: 2 }} />
+            </Tap>
           </View>
           <View>
             <Text style={styles.heroLabel}>Prochaine prière</Text>
@@ -241,6 +243,8 @@ export const IslamicHomeScreen: React.FC = () => {
           <Quick icon="bookmark-outline" title="Favoris" subtitle="Vos versets" onPress={() => router.push('/bookmarks')} />
         </View>
       </View>
+
+      <PoweredBy />
     </ScrollView>
   );
 };
@@ -301,6 +305,7 @@ const styles = StyleSheet.create({
   },
   heroTop: { flexDirection: 'row', justifyContent: 'flex-end' },
   heroPill: {
+    maxWidth: '80%',
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,

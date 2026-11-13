@@ -44,7 +44,25 @@
       "expo-font",
       "expo-audio",
       "expo-web-browser",
-      "expo-asset"
+      "expo-asset",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Bayân utilise votre position pour calculer les heures de prière exactes de votre lieu.",
+          "isAndroidBackgroundLocationEnabled": false,
+          "isIosBackgroundLocationEnabled": false
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "color": "#0B3D2E",
+          "sounds": [
+            "./assets/audio/adhan/touba_grande_mosquee.mp3",
+            "./assets/audio/adhan/senegal_adhan.mp3"
+          ]
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

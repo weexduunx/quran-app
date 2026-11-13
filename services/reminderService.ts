@@ -8,8 +8,9 @@
 import { Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
 
-import { prayerTimesService } from '@/services/prayerTimesService';
-import { findCity } from '@/utils/cities';
+import { prayerTimesService, type PrayerCalcOptions } from '@/services/prayerTimesService';
+import { placeLabel, type Place } from '@/utils/cities';
+import { resolveAdhan } from '@/utils/adhan';
 import { surahTransliteration } from '@/utils/surahNames';
 import type { PrayerKey, PrayerReminders, ReadingReminder } from '@/stores/settingsStore';
 
@@ -26,6 +27,27 @@ export const PRAYER_LABELS: Record<PrayerKey, { fr: string; wo: string }> = {
 };
 
 let configured = false;
+const adhanChannels = new Set<string>();
+
+/**
+ * Android fige le son d'un canal à sa création : un canal par muezzin
+ * (et par variante du Fajr). Renvoie l'id du canal à utiliser.
+ */
+async function adhanChannel(file: string | null): Promise<string> {
+  if (!file || Platform.OS !== 'android') return CHANNEL_PRAYER;
+  const id = `adhan_${file.replace(/\.[a-z0-9]+$/i, '')}`;
+  if (!adhanChannels.has(id)) {
+    await Notifications.setNotificationChannelAsync(id, {
+      name: 'Adhan',
+      importance: Notifications.AndroidImportance.MAX,
+      sound: file,
+      vibrationPattern: [0, 250, 250, 250],
+      audioAttributes: { usage: Notifications.AndroidAudioUsage.ALARM, contentType: Notifications.AndroidAudioContentType.MUSIC },
+    });
+    adhanChannels.add(id);
+  }
+  return id;
+}
 
 export const reminderService = {
   configure() {
@@ -63,7 +85,9 @@ export const reminderService = {
   },
 
   async sync(opts: {
-    city: string;
+    place: Place;
+    calc: PrayerCalcOptions;
+    adhanId: string;
     prayer: PrayerReminders;
     reading: ReadingReminder;
     lastRead?: { surahNumber: number; surahId: number; verseNumber: number } | null;
@@ -81,14 +105,21 @@ export const reminderService = {
     const permission = await Notifications.getPermissionsAsync();
     if (!permission.granted) return;
 
-    const location = findCity(opts.city);
+    const location = opts.place;
+    const where = placeLabel(location);
     const now = Date.now();
 
     if (opts.prayer.enabled) {
+      // L'adhan ne sonne qu'à l'heure exacte ; un rappel « X min avant » garde le son par défaut
+      const adhan = opts.prayer.minutesBefore === 0 ? resolveAdhan(opts.adhanId) : null;
+      const sound = (key: PrayerKey) => (adhan ? (key === 'fajr' && adhan.fajrFile) || adhan.file : null);
+      const channels: Partial<Record<PrayerKey, string>> = {};
+      for (const key of Object.keys(PRAYER_LABELS) as PrayerKey[]) channels[key] = await adhanChannel(sound(key));
+
       for (let d = 0; d < DAYS_AHEAD; d++) {
         const day = new Date();
         day.setDate(day.getDate() + d);
-        const times = prayerTimesService.calculatePrayerTimes(day, location);
+        const times = prayerTimesService.calculatePrayerTimes(day, location, opts.calc);
         for (const key of Object.keys(PRAYER_LABELS) as PrayerKey[]) {
           if (!opts.prayer.prayers[key]) continue;
           const at = times[key].timeDate.getTime() - opts.prayer.minutesBefore * 60_000;
@@ -99,11 +130,11 @@ export const reminderService = {
               title: opts.prayer.minutesBefore
                 ? `${label.wo} dans ${opts.prayer.minutesBefore} min · ${times[key].time}`
                 : `C'est l'heure de ${label.wo} · ${times[key].time}`,
-              body: `Prière de ${label.fr} à ${location.name}.`,
+              body: `Prière de ${label.fr} à ${where}.`,
               data: { kind: 'prayer', url: '/' },
-              sound: 'default',
+              sound: sound(key) ?? 'default',
             },
-            trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: at, channelId: CHANNEL_PRAYER },
+            trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: at, channelId: channels[key] },
           });
         }
       }

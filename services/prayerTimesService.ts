@@ -1,3 +1,5 @@
+import { utcOffsetFor } from '@/utils/cities';
+
 /**
  * Service pour calculer les heures de prière
  * Utilise l'algorithme de calcul islamique standard
@@ -24,11 +26,82 @@ export interface DailyPrayerTimes {
   date: string;
 }
 
+export type PrayerMethodId = 'mwl' | 'egypt' | 'umm_al_qura' | 'karachi' | 'isna' | 'morocco' | 'uoif' | 'custom';
+export type AsrSchool = 'standard' | 'hanafi';
+type TimeKey = 'fajr' | 'sunrise' | 'dhuhr' | 'asr' | 'maghrib' | 'isha';
+
+export interface PrayerMethod {
+  id: PrayerMethodId;
+  name: string;
+  description: string;
+  fajrAngle: number;
+  /** Angle d'Isha, ou durée fixe après Maghrib (Umm al-Qura) */
+  ishaAngle?: number;
+  ishaMinutes?: number;
+}
+
+/** Conventions de calcul reconnues (angles du soleil sous l'horizon) */
+export const PRAYER_METHODS: PrayerMethod[] = [
+  { id: 'mwl', name: 'Ligue Islamique Mondiale', description: 'Fajr 18° · Isha 17° — référence au Sénégal', fajrAngle: 18, ishaAngle: 17 },
+  { id: 'egypt', name: 'Autorité égyptienne', description: 'Fajr 19,5° · Isha 17,5°', fajrAngle: 19.5, ishaAngle: 17.5 },
+  { id: 'umm_al_qura', name: 'Umm al-Qura (La Mecque)', description: 'Fajr 18,5° · Isha 90 min après Maghrib', fajrAngle: 18.5, ishaMinutes: 90 },
+  { id: 'karachi', name: 'Université de Karachi', description: 'Fajr 18° · Isha 18°', fajrAngle: 18, ishaAngle: 18 },
+  { id: 'isna', name: 'ISNA (Amérique du Nord)', description: 'Fajr 15° · Isha 15°', fajrAngle: 15, ishaAngle: 15 },
+  { id: 'morocco', name: 'Ministère des Habous (Maroc)', description: 'Fajr 19° · Isha 17°', fajrAngle: 19, ishaAngle: 17 },
+  { id: 'uoif', name: 'Musulmans de France (UOIF)', description: 'Fajr 12° · Isha 12°', fajrAngle: 12, ishaAngle: 12 },
+  { id: 'custom', name: 'Personnalisée', description: 'Vos propres angles', fajrAngle: 18, ishaAngle: 17 },
+];
+
+/** Convention conseillée selon le pays (ISO 2 lettres) ; MWL ailleurs, dont le Sénégal et l'Europe */
+export function recommendedMethod(countryCode?: string): PrayerMethodId {
+  switch ((countryCode ?? '').toUpperCase()) {
+    case 'MA':
+      return 'morocco';
+    case 'EG':
+    case 'SD':
+    case 'LY':
+      return 'egypt';
+    case 'SA':
+    case 'YE':
+      return 'umm_al_qura';
+    case 'US':
+    case 'CA':
+      return 'isna';
+    case 'PK':
+    case 'IN':
+    case 'BD':
+    case 'AF':
+      return 'karachi';
+    default:
+      return 'mwl';
+  }
+}
+
+export interface PrayerCalcOptions {
+  method?: PrayerMethodId;
+  /** Angles utilisés quand method = 'custom' */
+  customFajrAngle?: number;
+  customIshaAngle?: number;
+  /** standard = Maliki/Chafi'i/Hanbali (ombre × 1) · hanafi = ombre × 2 */
+  asrSchool?: AsrSchool;
+  /** Ajustement en minutes par prière (ex. +2 pour une marge de précaution) */
+  offsets?: Partial<Record<TimeKey, number>>;
+}
+
+export const DEFAULT_PRAYER_OPTIONS: Required<Omit<PrayerCalcOptions, 'offsets'>> & { offsets: Record<TimeKey, number> } = {
+  method: 'mwl',
+  customFajrAngle: 18,
+  customIshaAngle: 17,
+  asrSchool: 'standard',
+  offsets: { fajr: 0, sunrise: 0, dhuhr: 0, asr: 0, maghrib: 0, isha: 0 },
+};
+
 export interface Location {
   latitude: number;
   longitude: number;
+  /** Fuseau IANA (Europe/Paris…) : donne l'heure locale exacte, heure d'été comprise */
   timezone: string;
-  /** Décalage UTC en heures du lieu (Dakar : 0) */
+  /** Décalage UTC de secours en heures (Dakar : 0) */
   utcOffset?: number;
 }
 
@@ -45,8 +118,11 @@ class PrayerTimesService {
    * Utilise la méthode MWL (Ligue Mondiale Islamique) standard au Sénégal
    * Angle Fajr: -18°, Angle Isha: -17°
    */
-  calculatePrayerTimes(date: Date = new Date(), location?: Location): DailyPrayerTimes {
+  calculatePrayerTimes(date: Date = new Date(), location?: Location, options?: PrayerCalcOptions): DailyPrayerTimes {
     const loc = location || this.defaultLocation;
+    const offsetOn = (d: Date) => utcOffsetFor(loc.timezone, d, loc.utcOffset ?? 0);
+    const off = offsetOn(date);
+    const solar = (d: Date) => this.calculateSolarPrayerTimes(d, loc, options, offsetOn(d));
 
     // Calcul basé sur la méthode MWL (Muslim World League)
     // Standard utilisé au Sénégal pour les horaires de prière officiels
@@ -55,14 +131,14 @@ class PrayerTimesService {
     const baseDay = date.getDate();
 
     // Calcul des heures de prière selon la position solaire pour Dakar
-    const calculatedTimes = this.calculateSolarPrayerTimes(date, loc);
+    const calculatedTimes = solar(date);
 
     const times = {
       fajr: {
         name: 'Subha',
         nameArabic: 'الفَجْر',
         time: calculatedTimes.fajr,
-        timeDate: this.parseTimeToDate(calculatedTimes.fajr, baseYear, baseMonth, baseDay),
+        timeDate: this.parseTimeToDate(calculatedTimes.fajr, baseYear, baseMonth, baseDay, off),
         isCurrent: false,
         isNext: false,
       },
@@ -70,7 +146,7 @@ class PrayerTimesService {
         name: 'Lever du soleil',
         nameArabic: 'الشُرُوق',
         time: calculatedTimes.sunrise,
-        timeDate: this.parseTimeToDate(calculatedTimes.sunrise, baseYear, baseMonth, baseDay),
+        timeDate: this.parseTimeToDate(calculatedTimes.sunrise, baseYear, baseMonth, baseDay, off),
         isCurrent: false,
         isNext: false,
       },
@@ -78,7 +154,7 @@ class PrayerTimesService {
         name: 'Tisbar',
         nameArabic: 'الظُهر',
         time: calculatedTimes.dhuhr,
-        timeDate: this.parseTimeToDate(calculatedTimes.dhuhr, baseYear, baseMonth, baseDay),
+        timeDate: this.parseTimeToDate(calculatedTimes.dhuhr, baseYear, baseMonth, baseDay, off),
         isCurrent: false,
         isNext: false,
       },
@@ -86,7 +162,7 @@ class PrayerTimesService {
         name: 'Takussan',
         nameArabic: 'العَصر',
         time: calculatedTimes.asr,
-        timeDate: this.parseTimeToDate(calculatedTimes.asr, baseYear, baseMonth, baseDay),
+        timeDate: this.parseTimeToDate(calculatedTimes.asr, baseYear, baseMonth, baseDay, off),
         isCurrent: false,
         isNext: false,
       },
@@ -94,7 +170,7 @@ class PrayerTimesService {
         name: 'Timis',
         nameArabic: 'المَغرِب',
         time: calculatedTimes.maghrib,
-        timeDate: this.parseTimeToDate(calculatedTimes.maghrib, baseYear, baseMonth, baseDay),
+        timeDate: this.parseTimeToDate(calculatedTimes.maghrib, baseYear, baseMonth, baseDay, off),
         isCurrent: false,
         isNext: false,
       },
@@ -102,7 +178,7 @@ class PrayerTimesService {
         name: 'Gué',
         nameArabic: 'العِشَاء',
         time: calculatedTimes.isha,
-        timeDate: this.parseTimeToDate(calculatedTimes.isha, baseYear, baseMonth, baseDay),
+        timeDate: this.parseTimeToDate(calculatedTimes.isha, baseYear, baseMonth, baseDay, off),
         isCurrent: false,
         isNext: false,
       }
@@ -126,11 +202,11 @@ class PrayerTimesService {
           nextPrayer = prayerArray[i + 1];
         } else {
           // Si c'est Gué (Isha), la prochaine est Subha (Fajr) du lendemain
-          const tomorrowFajr = this.calculateSolarPrayerTimes(new Date(baseYear, baseMonth, baseDay + 1), loc);
+          const tomorrowFajr = solar(new Date(baseYear, baseMonth, baseDay + 1));
           nextPrayer = {
             ...times.fajr,
             time: tomorrowFajr.fajr,
-            timeDate: this.parseTimeToDate(tomorrowFajr.fajr, baseYear, baseMonth, baseDay + 1)
+            timeDate: this.parseTimeToDate(tomorrowFajr.fajr, baseYear, baseMonth, baseDay + 1, off)
           };
         }
         break;
@@ -140,11 +216,11 @@ class PrayerTimesService {
     // Si aucune prière n'est passée, on est avant Subha (Fajr)
     if (!currentPrayer) {
       // Prière actuelle = Gué (Isha) d'hier
-      const yesterdayIsha = this.calculateSolarPrayerTimes(new Date(baseYear, baseMonth, baseDay - 1), loc);
+      const yesterdayIsha = solar(new Date(baseYear, baseMonth, baseDay - 1));
       currentPrayer = {
         ...times.isha,
         time: yesterdayIsha.isha,
-        timeDate: this.parseTimeToDate(yesterdayIsha.isha, baseYear, baseMonth, baseDay - 1)
+        timeDate: this.parseTimeToDate(yesterdayIsha.isha, baseYear, baseMonth, baseDay - 1, off)
       };
       currentPrayer.isCurrent = true;
 
@@ -170,9 +246,13 @@ class PrayerTimesService {
    * équation du temps calculées à partir de la date julienne.
    * Les heures renvoyées sont exprimées dans le fuseau du lieu (utcOffset).
    */
-  private calculateSolarPrayerTimes(date: Date, location: Location) {
+  private calculateSolarPrayerTimes(date: Date, location: Location, options?: PrayerCalcOptions, utcOffset = location.utcOffset ?? 0) {
+    const opts = { ...DEFAULT_PRAYER_OPTIONS, ...options };
+    const method = PRAYER_METHODS.find((m) => m.id === opts.method) ?? PRAYER_METHODS[0];
+    const fajrAngle = method.id === 'custom' ? opts.customFajrAngle : method.fajrAngle;
+    const ishaAngle = method.id === 'custom' ? opts.customIshaAngle : method.ishaAngle;
+    const shadow = opts.asrSchool === 'hanafi' ? 2 : 1;
     const { latitude: lat, longitude: lon } = location;
-    const utcOffset = location.utcOffset ?? 0;
     const d2r = Math.PI / 180;
     const r2d = 180 / Math.PI;
     const fix = (a: number, b: number) => {
@@ -201,19 +281,33 @@ class PrayerTimesService {
           (Math.cos(decl * d2r) * Math.cos(lat * d2r))
       ) * r2d) / 15;
 
-    // Asr (école malikite/chaféite : ombre = 1 × objet + ombre de midi)
-    const asrAngle = -Math.atan(1 / (1 + Math.tan(Math.abs(lat - decl) * d2r))) * r2d;
+    // Asr : ombre = shadow × objet + ombre de midi (1 = malikite/chaféite, 2 = hanafite)
+    const asrAngle = -Math.atan(1 / (shadow + Math.tan(Math.abs(lat - decl) * d2r))) * r2d;
 
-    const local = (h: number) => h + utcOffset;
+    const sunrise = noon - T(0.833);
+    const maghrib = noon + T(0.833);
+    let fajr = noon - T(fajrAngle);
+    let isha = method.ishaMinutes ? maghrib + method.ishaMinutes / 60 : noon + T(ishaAngle ?? 17);
 
-    return {
-      fajr: this.formatTimeDecimal(local(noon - T(18))),
-      sunrise: this.formatTimeDecimal(local(noon - T(0.833))),
-      dhuhr: this.formatTimeDecimal(local(noon)),
-      asr: this.formatTimeDecimal(local(noon + T(asrAngle))),
-      maghrib: this.formatTimeDecimal(local(noon + T(0.833))),
-      isha: this.formatTimeDecimal(local(noon + T(17))),
-    };
+    // Latitudes élevées (Europe du Nord, été) : le soleil ne descend pas assez sous l'horizon.
+    // Règle « angle/60 de la nuit » (PrayTimes) : Fajr et Isha ne s'éloignent pas plus
+    // du lever / coucher que cette fraction de la nuit.
+    const night = sunrise + 24 - maghrib;
+    const fajrMax = (fajrAngle / 60) * night;
+    if (!Number.isFinite(fajr) || sunrise - fajr > fajrMax) fajr = sunrise - fajrMax;
+    if (!method.ishaMinutes) {
+      const ishaMax = ((ishaAngle ?? 17) / 60) * night;
+      if (!Number.isFinite(isha) || isha - maghrib > ishaMax) isha = maghrib + ishaMax;
+    }
+
+    const raw: Record<TimeKey, number> = { fajr, sunrise, dhuhr: noon, asr: noon + T(asrAngle), maghrib, isha };
+
+    // Heure locale + ajustement manuel (minutes)
+    const out = {} as Record<TimeKey, string>;
+    for (const k of Object.keys(raw) as TimeKey[]) {
+      out[k] = this.formatTimeDecimal(raw[k] + utcOffset + (opts.offsets?.[k] ?? 0) / 60);
+    }
+    return out;
   }
 
   /**

@@ -14,7 +14,9 @@ import { useKidsStore } from '@/stores/kidsStore';
  */
 export function useReminderSync() {
   const hydrated = useSettingsHydrated();
-  const city = useSettingsStore((s) => s.city);
+  const place = useSettingsStore((s) => s.place);
+  const calc = useSettingsStore((s) => s.prayerCalc);
+  const adhanId = useSettingsStore((s) => s.adhanId);
   const prayer = useSettingsStore((s) => s.prayerReminders);
   const reading = useSettingsStore((s) => s.readingReminder);
   const lastRead = useProgressStore((s) => s.lastRead);
@@ -30,7 +32,7 @@ export function useReminderSync() {
       // Regroupe les changements rapprochés (défilement de lecture, réglages)
       timer.current = setTimeout(() => {
         reminderService
-          .sync({ city, prayer, reading, lastRead: useProgressStore.getState().lastRead })
+          .sync({ place, calc, adhanId, prayer, reading, lastRead: useProgressStore.getState().lastRead })
           .catch((e) => console.warn('[rappels]', e));
       }, 1500);
     };
@@ -40,7 +42,7 @@ export function useReminderSync() {
       sub.remove();
       if (timer.current) clearTimeout(timer.current);
     };
-  }, [hydrated, city, prayer, reading, lastKey]);
+  }, [hydrated, place, calc, adhanId, prayer, reading, lastKey]);
 
   // Toucher une notification ouvre l'écran prévu
   useEffect(() => {

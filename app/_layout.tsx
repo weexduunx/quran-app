@@ -76,6 +76,7 @@ export default function RootLayout() {
         <Stack.Screen name="surah/[id]" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="bookmarks" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="downloads" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="prayer-settings" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="tafsir/[bookId]" options={{ animation: 'slide_from_right' }} />
       </Stack>
       <OfflineBanner />

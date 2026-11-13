@@ -1,0 +1,4 @@
+[
+  { "id": "touba_grande_mosquee", "name": "Grande Mosquée de Touba", "origin": "Touba, Sénégal", "default": true },
+  { "id": "senegal_adhan", "name": "Adhan du Sénégal", "origin": "Sénégal" }
+]

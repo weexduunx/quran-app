@@ -3,6 +3,9 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+import { DEFAULT_PRAYER_OPTIONS, recommendedMethod, type PrayerCalcOptions } from '@/services/prayerTimesService';
+import { DEFAULT_PLACE, findCity, type Place } from '@/utils/cities';
+
 export type ThemeMode = 'system' | 'light' | 'dark';
 export type PrayerKey = 'fajr' | 'dhuhr' | 'asr' | 'maghrib' | 'isha';
 
@@ -12,6 +15,9 @@ export interface PrayerReminders {
   /** Minutes avant l'heure (0 = à l'heure) */
   minutesBefore: number;
 }
+
+/** Réglages du calcul des heures de prière */
+export type PrayerCalc = typeof DEFAULT_PRAYER_OPTIONS;
 
 export interface ReadingReminder {
   enabled: boolean;
@@ -31,11 +37,19 @@ interface SettingsState {
   showTranslation: boolean;
   /** Décalage en jours appliqué au calendrier hégirien calculé (observation locale) */
   hijriOffset: number;
+  /** Nom du lieu (affichage) — toujours égal à place.name */
   city: string;
+  /** Lieu exact des heures de prière : coordonnées + fuseau */
+  place: Place;
+  /** L'utilisateur a choisi lui-même la convention (sinon elle suit le pays) */
+  methodChosen: boolean;
   /** L'onboarding du premier lancement a été vu */
   hasOnboarded: boolean;
   prayerReminders: PrayerReminders;
   readingReminder: ReadingReminder;
+  prayerCalc: PrayerCalc;
+  /** Adhan des notifications : 'auto' = muezzin par défaut, 'system' = son du téléphone, sinon id du muezzin */
+  adhanId: string;
 
   setThemeMode: (mode: ThemeMode) => void;
   setArabicSizeIndex: (i: number) => void;
@@ -43,10 +57,13 @@ interface SettingsState {
   toggleTransliteration: () => void;
   toggleTranslation: () => void;
   setHijriOffset: (n: number) => void;
-  setCity: (city: string) => void;
+  setPlace: (place: Place) => void;
   completeOnboarding: () => void;
   setPrayerReminders: (patch: Partial<PrayerReminders>) => void;
   setReadingReminder: (patch: Partial<ReadingReminder>) => void;
+  setPrayerCalc: (patch: Partial<PrayerCalc>) => void;
+  setPrayerOffset: (key: keyof PrayerCalc['offsets'], minutes: number) => void;
+  setAdhanId: (id: string) => void;
   reset: () => void;
 }
 
@@ -57,13 +74,17 @@ const defaults = {
   showTransliteration: true,
   showTranslation: true,
   hijriOffset: -1,
-  city: 'Dakar',
+  city: DEFAULT_PLACE.name,
+  place: DEFAULT_PLACE,
+  methodChosen: false,
   prayerReminders: {
     enabled: false,
     prayers: { fajr: true, dhuhr: true, asr: true, maghrib: true, isha: true },
     minutesBefore: 0,
   } as PrayerReminders,
   readingReminder: { enabled: false, hour: 20, minute: 0 } as ReadingReminder,
+  prayerCalc: DEFAULT_PRAYER_OPTIONS as PrayerCalc,
+  adhanId: 'auto',
 };
 
 const clamp = (n: number, min: number, max: number) => Math.min(max, Math.max(min, n));
@@ -80,16 +101,46 @@ export const useSettingsStore = create<SettingsState>()(
       toggleTransliteration: () => set((s) => ({ showTransliteration: !s.showTransliteration })),
       toggleTranslation: () => set((s) => ({ showTranslation: !s.showTranslation })),
       setHijriOffset: (n) => set({ hijriOffset: clamp(n, -2, 2) }),
-      setCity: (city) => set({ city }),
+      setPlace: (place) =>
+        set((s) => ({
+          place,
+          city: place.name,
+          // La convention suit le pays tant que l'utilisateur ne l'a pas choisie
+          prayerCalc: s.methodChosen ? s.prayerCalc : { ...s.prayerCalc, method: recommendedMethod(place.countryCode) },
+        })),
       completeOnboarding: () => set({ hasOnboarded: true }),
       setPrayerReminders: (patch) => set((s) => ({ prayerReminders: { ...s.prayerReminders, ...patch } })),
       setReadingReminder: (patch) => set((s) => ({ readingReminder: { ...s.readingReminder, ...patch } })),
+      setPrayerCalc: (patch) =>
+        set((s) => ({ prayerCalc: { ...s.prayerCalc, ...patch }, methodChosen: s.methodChosen || 'method' in patch })),
+      setPrayerOffset: (key, minutes) =>
+        set((s) => ({
+          prayerCalc: { ...s.prayerCalc, offsets: { ...s.prayerCalc.offsets, [key]: clamp(minutes, -30, 30) } },
+        })),
+      setAdhanId: (adhanId) => set({ adhanId }),
       // La réinitialisation ne rejoue pas l'onboarding
       reset: () => set(defaults),
     }),
     {
       name: 'settings-store',
       storage: createJSONStorage(() => AsyncStorage),
+      // Les réglages enregistrés avant l'ajout du calcul gardent les valeurs par défaut manquantes
+      merge: (persisted, current) => {
+        const p = (persisted ?? {}) as Partial<SettingsState>;
+        // Ancienne version : seul le nom de la ville était enregistré
+        const place = p.place ?? findCity(p.city);
+        return {
+          ...current,
+          ...p,
+          place,
+          city: place.name,
+          prayerCalc: {
+            ...DEFAULT_PRAYER_OPTIONS,
+            ...p.prayerCalc,
+            offsets: { ...DEFAULT_PRAYER_OPTIONS.offsets, ...p.prayerCalc?.offsets },
+          },
+        };
+      },
     }
   )
 );
@@ -107,3 +158,6 @@ export function useSettingsHydrated() {
 export const useArabicFontSize = () => ARABIC_SIZES[useSettingsStore((s) => s.arabicSizeIndex)];
 export const useTranslationFontSize = () =>
   TRANSLATION_SIZES[useSettingsStore((s) => s.translationSizeIndex)];
+
+/** Options de calcul à passer à prayerTimesService */
+export const usePrayerCalc = (): PrayerCalcOptions => useSettingsStore((s) => s.prayerCalc);
