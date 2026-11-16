@@ -49,7 +49,20 @@
       ],
       "expo-web-browser",
       "expo-asset",
-      "expo-image"
+      "expo-image",
+      [
+        "expo-notifications",
+        {
+          "sounds": [
+            "./assets/notification-sounds/adhan_touba.mp3",
+            "./assets/notification-sounds/adhan_touba_ios.caf",
+            "./assets/notification-sounds/adhan_senegal.mp3",
+            "./assets/notification-sounds/adhan_senegal_ios.caf",
+            "./assets/notification-sounds/adhan_reunion.mp3",
+            "./assets/notification-sounds/adhan_reunion_ios.caf"
+          ]
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

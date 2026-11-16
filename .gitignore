@@ -41,3 +41,6 @@ app-example
 # generated native folders
 /ios
 /android
+
+# Enregistrements d’origine des adhans (versions optimisées : assets/notification-sounds)
+assets/sounds/
