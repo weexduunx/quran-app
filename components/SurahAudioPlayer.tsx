@@ -7,6 +7,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Animated, StyleSheet, Text, View } from 'react-native';
 import { setAudioModeAsync, useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
+import { useBackgroundAudio } from '@/hooks/useBackgroundAudio';
 import Slider from '@react-native-community/slider';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -57,6 +58,13 @@ export function SurahAudioPlayer({
   const surah = surahNumber ?? verses[0]?.surah_id;
   const url = surah ? recitationService.surahAudioUrl(reciter, surah) : undefined;
   const bg = isDark ? '#0E3A2C' : '#0B3D2E';
+
+  useBackgroundAudio(player, {
+    active: isVisible,
+    playing: status.playing,
+    title: surahName ?? (surah ? `Sourate ${surah}` : undefined),
+    artist: reciter?.name,
+  });
 
   // Part du texte qui précède chaque verset (0 → 1)
   const offsets = useMemo(() => {

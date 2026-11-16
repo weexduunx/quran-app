@@ -4,6 +4,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { setAudioModeAsync, useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
+import { useBackgroundAudio } from '@/hooks/useBackgroundAudio';
 import Slider from '@react-native-community/slider';
 
 import { getTafsirBook, tafsirBooks, TafsirBook, useTafsirStore } from '@/stores/tafsirStore';
@@ -287,6 +288,13 @@ function AudioTafsir({
   const player = useAudioPlayer(null, { updateInterval: 500 });
   const status = useAudioPlayerStatus(player);
   const track = tracks[Math.min(trackIndex, tracks.length - 1)];
+
+  useBackgroundAudio(player, {
+    active: started,
+    playing: status.playing,
+    title: `Tafsir · ${surahName ?? `Sourate ${surah}`}`,
+    artist: book.author,
+  });
 
   useEffect(() => {
     setAudioModeAsync({ playsInSilentMode: true, shouldPlayInBackground: true, interruptionModeAndroid: 'duckOthers' }).catch(() => {});
