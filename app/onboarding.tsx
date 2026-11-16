@@ -221,7 +221,7 @@ function Hero({ page, height, topInset }: { page: Page; height: number; topInset
           </View>
         </View>
       </View>
-      <MiniRow icon="headset-outline" title="Tafsir en wolof" sub="Baye Niasse · Oustaz Ibrahima Fall" />
+      <MiniRow icon="headset-outline" title="Tafsir en wolof" sub="Oustaz Ibrahima Fall · 114 sourates" />
       <MiniRow icon="flame-outline" title="Une habitude chaque jour" sub="Reprise automatique et série de jours" />
     </View>
   );

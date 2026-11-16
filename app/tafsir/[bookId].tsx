@@ -22,7 +22,7 @@ const clampVerse = (s: number, v: number) => Math.min(VERSE_COUNTS[s - 1], Math.
 
 export default function TafsirReaderScreen() {
   const params = useLocalSearchParams<{ bookId: string; surah?: string; verse?: string }>();
-  const book = getTafsirBook(params.bookId) ?? tafsirBooks[1];
+  const book = getTafsirBook(params.bookId) ?? tafsirBooks[0];
   const surah = clampSurah(Number(params.surah ?? 1));
   const verse = clampVerse(surah, Number(params.verse ?? 1));
 

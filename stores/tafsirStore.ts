@@ -22,24 +22,13 @@ export interface TafsirBook {
 /**
  * Uniquement des contenus réels et vérifiés :
  * - livres écrits : API publique Quran.com (textes intégraux, par verset)
- * - tafsirs wolof : enregistrements audio de Cheikh Ibrahima Niasse et d'Oustaz
- *   Ibrahima Fall (Internet Archive)
+ * - tafsir wolof : enregistrements audio d'Oustaz Ibrahima Fall (Internet Archive)
  *
  * Aucun tafsir écrit en français n'est disponible librement : les livres
  * proposés sont en arabe et en anglais. Le texte du verset reste affiché en
  * français au-dessus du commentaire.
  */
 export const tafsirBooks: TafsirBook[] = [
-  {
-    id: 'baye-niasse',
-    title: 'Tafsir Baye Niasse',
-    titleArabic: 'تفسير الشيخ إبراهيم نياس',
-    author: 'Cheikh Ibrahima Niasse',
-    description: 'Le Coran expliqué en wolof, sourate par sourate. Enregistrements audio.',
-    language: 'wolof',
-    kind: 'audio',
-    sourceNote: 'Sourates 41 à 43 absentes de la collection. Source : Internet Archive (Tafsir Baye NIASS).',
-  },
   {
     id: 'ibrahima-fall',
     title: 'Tafsir Oustaz Ibrahima Fall',
