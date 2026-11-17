@@ -9,11 +9,15 @@ import { DEFAULT_PLACE, findCity, type Place } from '@/utils/cities';
 export type ThemeMode = 'system' | 'light' | 'dark';
 export type PrayerKey = 'fajr' | 'dhuhr' | 'asr' | 'maghrib' | 'isha';
 
+export type AdhanSound = 'touba' | 'senegal' | 'reunion' | 'none';
+
 export interface PrayerReminders {
   enabled: boolean;
   prayers: Record<PrayerKey, boolean>;
   /** Minutes avant l'heure (0 = à l'heure) */
   minutesBefore: number;
+  /** Adhan joué à l'heure de la prière (absent dans les anciens réglages : Touba) */
+  adhan?: AdhanSound;
 }
 
 /** Réglages du calcul des heures de prière */
@@ -81,6 +85,7 @@ const defaults = {
     enabled: false,
     prayers: { fajr: true, dhuhr: true, asr: true, maghrib: true, isha: true },
     minutesBefore: 0,
+    adhan: 'touba',
   } as PrayerReminders,
   readingReminder: { enabled: false, hour: 20, minute: 0 } as ReadingReminder,
   prayerCalc: DEFAULT_PRAYER_OPTIONS as PrayerCalc,

@@ -9,6 +9,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Animated, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { setAudioModeAsync, useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
+import { useBackgroundAudio } from '@/hooks/useBackgroundAudio';
 import Slider from '@react-native-community/slider';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -81,6 +82,13 @@ const VersePlayer: React.FC<AudioPlayerProps> = ({
   const surah = surahNumber ?? verse?.surah_id;
   const speed = SPEEDS[speedIndex];
   const repeatTarget = REPEATS[repeatIndex];
+
+  useBackgroundAudio(player, {
+    active: isVisible,
+    playing: status.playing,
+    title: verse ? `${surahName ?? `Sourate ${surah}`} · verset ${verse.verse_number}` : surahName,
+    artist: reciter?.name,
+  });
 
   // Palette du lecteur : toujours sur fond vert profond, dans les deux thèmes
   const c = useMemo(

@@ -19,6 +19,7 @@ import { toHijri, formatHijri } from '@/utils/hijri';
 import { ArabicFonts, Radius, Spacing, Type } from '@/constants/theme';
 import { Chip, IconButton, Segmented, SectionTitle, Tap } from '@/components/ui/kit';
 import { CityPicker } from '@/components/CityPicker';
+import { AdhanPicker } from '@/components/AdhanPicker';
 import { APP_NAME, APP_TAGLINE } from '@/components/BrandMark';
 import { PoweredBy } from '@/components/PoweredBy';
 import { placeLabel } from '@/utils/cities';
@@ -254,6 +255,10 @@ export default function SettingsScreen() {
                 ]}
                 value={String(s.prayerReminders.minutesBefore)}
                 onChange={(v) => s.setPrayerReminders({ minutesBefore: Number(v) })}
+              />
+              <AdhanPicker
+                value={s.prayerReminders.adhan ?? 'touba'}
+                onChange={(adhan) => s.setPrayerReminders({ adhan })}
               />
             </View>
           )}

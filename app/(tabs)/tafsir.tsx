@@ -11,10 +11,11 @@ import { ArabicFonts, Radius, Spacing, Type } from '@/constants/theme';
 import { Button, Card, Chip, IconButton, SectionTitle } from '@/components/ui/kit';
 import { surahTransliteration } from '@/utils/surahNames';
 
-type Filter = 'all' | 'arabic' | 'english' | 'favorites';
+type Filter = 'all' | 'french' | 'arabic' | 'english' | 'favorites';
 
 const FILTERS: { id: Filter; label: string }[] = [
   { id: 'all', label: 'Tous' },
+  { id: 'french', label: 'Français' },
   { id: 'arabic', label: 'Arabe' },
   { id: 'english', label: 'Anglais' },
   { id: 'favorites', label: 'Favoris' },
@@ -137,7 +138,7 @@ export default function TafsirScreen() {
                 <Card onPress={() => open(b)} style={styles.rowTap}>
                   <View style={[styles.langTile, { backgroundColor: colors.primarySoft }]}>
                     <Text style={[Type.caption, { color: colors.primary, fontWeight: '700' }]}>
-                      {b.language === 'arabic' ? 'ع' : 'EN'}
+                      {b.language === 'arabic' ? 'ع' : b.language === 'french' ? 'FR' : 'EN'}
                     </Text>
                   </View>
                   <View style={{ flex: 1, marginLeft: Spacing.md }}>

@@ -4,6 +4,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { setAudioModeAsync, useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
+import { useBackgroundAudio } from '@/hooks/useBackgroundAudio';
 import Slider from '@react-native-community/slider';
 
 import { getTafsirBook, tafsirBooks, TafsirBook, useTafsirStore } from '@/stores/tafsirStore';
@@ -22,7 +23,7 @@ const clampVerse = (s: number, v: number) => Math.min(VERSE_COUNTS[s - 1], Math.
 
 export default function TafsirReaderScreen() {
   const params = useLocalSearchParams<{ bookId: string; surah?: string; verse?: string }>();
-  const book = getTafsirBook(params.bookId) ?? tafsirBooks[1];
+  const book = getTafsirBook(params.bookId) ?? tafsirBooks[0];
   const surah = clampSurah(Number(params.surah ?? 1));
   const verse = clampVerse(surah, Number(params.verse ?? 1));
 
@@ -132,8 +133,19 @@ function TextTafsir({
     : { fontSize: textSize, lineHeight: textSize * 1.6 };
 
   const keys = data?.verseKeys ?? [];
+  const startAyah = data?.startsAt?.split(':')[1];
   const range =
-    keys.length > 1 ? `Commentaire des versets ${keys[0].split(':')[1]} à ${keys[keys.length - 1].split(':')[1]}` : null;
+    keys.length > 1
+      ? `Commentaire des versets ${keys[0].split(':')[1]} à ${keys[keys.length - 1].split(':')[1]}`
+      : startAyah && Number(startAyah) !== verse
+        ? `Commentaire commun à partir du verset ${startAyah}`
+        : null;
+  // Verset pas encore traduit : on affiche le texte arabe d'origine
+  const showOriginal = !!data?.pendingTranslation;
+  const textRtl = rtl || showOriginal;
+  const textStyle = showOriginal
+    ? { fontFamily: ArabicFonts.regular, fontSize: textSize + 5, lineHeight: (textSize + 5) * 1.9, textAlign: 'right' as const, writingDirection: 'rtl' as const }
+    : bodyStyle;
 
   return (
     <>
@@ -199,6 +211,13 @@ function TextTafsir({
           {state === 'ready' && data && (
             <>
               {range && <Text style={[Type.overline, { color: colors.gold, marginBottom: Spacing.md }]}>{range.toUpperCase()}</Text>}
+              {showOriginal && (
+                <Card tone="soft" style={{ marginBottom: Spacing.lg }}>
+                  <Text style={[Type.callout, { color: colors.text }]}>
+                    La traduction française de ce passage arrive bientôt. Voici le commentaire original en arabe.
+                  </Text>
+                </Card>
+              )}
               {data.blocks.length === 0 ? (
                 <View style={styles.center}>
                   <Text style={[Type.callout, { color: colors.textMuted, textAlign: 'center', marginBottom: Spacing.md }]}>
@@ -209,18 +228,20 @@ function TextTafsir({
               ) : (
                 data.blocks.map((b, i) =>
                   b.type === 'heading' ? (
-                    <Text key={i} style={[Type.headline, { color: colors.primary, marginTop: i ? Spacing.lg : 0, marginBottom: Spacing.sm, textAlign: rtl ? 'right' : 'left' }]}>
+                    <Text key={i} style={[Type.headline, { color: colors.primary, marginTop: i ? Spacing.lg : 0, marginBottom: Spacing.sm, textAlign: textRtl ? 'right' : 'left' }]}>
                       {b.text}
                     </Text>
                   ) : (
-                    <Text key={i} selectable style={[bodyStyle, { color: colors.text, marginBottom: Spacing.md }]}>
+                    <Text key={i} selectable style={[textStyle, { color: colors.text, marginBottom: Spacing.md }]}>
                       {b.text}
                     </Text>
                   )
                 )
               )}
               <Text style={[Type.caption, { color: colors.textSubtle, marginTop: Spacing.lg }]}>
-                {book.title} — {book.author}. Source : Quran.com
+                {book.bayanSource
+                  ? `${book.title} — ${book.author}. Traduction automatique (DeepL), non vérifiée par un savant. Texte original : Quran.com`
+                  : `${book.title} — ${book.author}. Source : Quran.com`}
               </Text>
             </>
           )}
@@ -287,6 +308,13 @@ function AudioTafsir({
   const player = useAudioPlayer(null, { updateInterval: 500 });
   const status = useAudioPlayerStatus(player);
   const track = tracks[Math.min(trackIndex, tracks.length - 1)];
+
+  useBackgroundAudio(player, {
+    active: started,
+    playing: status.playing,
+    title: `Tafsir · ${surahName ?? `Sourate ${surah}`}`,
+    artist: book.author,
+  });
 
   useEffect(() => {
     setAudioModeAsync({ playsInSilentMode: true, shouldPlayInBackground: true, interruptionModeAndroid: 'duckOthers' }).catch(() => {});

@@ -7,7 +7,6 @@
     "icon": "./assets/images/icon.png",
     "scheme": "quranapp",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
     "ios": {
       "supportsTablet": true
     },
@@ -18,7 +17,6 @@
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "package": "com.weexduunx88.quranapp"
     },
@@ -42,9 +40,16 @@
         }
       ],
       "expo-font",
-      "expo-audio",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": false,
+          "enableBackgroundPlayback": true
+        }
+      ],
       "expo-web-browser",
       "expo-asset",
+      "expo-image",
       [
         "expo-location",
         {
@@ -56,10 +61,13 @@
       [
         "expo-notifications",
         {
-          "color": "#0B3D2E",
           "sounds": [
-            "./assets/audio/adhan/touba_grande_mosquee.mp3",
-            "./assets/audio/adhan/senegal_adhan.mp3"
+            "./assets/notification-sounds/adhan_touba.mp3",
+            "./assets/notification-sounds/adhan_touba_ios.caf",
+            "./assets/notification-sounds/adhan_senegal.mp3",
+            "./assets/notification-sounds/adhan_senegal_ios.caf",
+            "./assets/notification-sounds/adhan_reunion.mp3",
+            "./assets/notification-sounds/adhan_reunion_ios.caf"
           ]
         }
       ]

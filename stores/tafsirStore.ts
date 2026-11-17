@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-export type TafsirLanguage = 'arabic' | 'english' | 'wolof';
+export type TafsirLanguage = 'french' | 'arabic' | 'english' | 'wolof';
 
 export interface TafsirBook {
   id: string;
@@ -14,6 +14,10 @@ export interface TafsirBook {
   kind: 'text' | 'audio';
   /** Ressource tafsir de l'API Quran.com v4 (livres écrits) */
   quranComId?: number;
+  /** Tafsir traduit servi par le backend Bayân (`/tafsir-fr/{source}/...`) */
+  bayanSource?: string;
+  /** Livre d'origine, proposé quand un verset n'est pas encore traduit */
+  originalBookId?: string;
   /** Mention de la source affichée sous le lecteur (livres audio) */
   sourceNote?: string;
   level?: 'débutant' | 'intermédiaire' | 'approfondi';
@@ -22,24 +26,13 @@ export interface TafsirBook {
 /**
  * Uniquement des contenus réels et vérifiés :
  * - livres écrits : API publique Quran.com (textes intégraux, par verset)
- * - tafsirs wolof : enregistrements audio de Cheikh Ibrahima Niasse et d'Oustaz
- *   Ibrahima Fall (Internet Archive)
+ * - tafsir wolof : enregistrements audio d'Oustaz Ibrahima Fall (Internet Archive)
  *
- * Aucun tafsir écrit en français n'est disponible librement : les livres
- * proposés sont en arabe et en anglais. Le texte du verset reste affiché en
- * français au-dessus du commentaire.
+ * Aucun tafsir écrit en français n'est disponible librement : Al-Muyassar est
+ * traduit automatiquement (DeepL) par le backend, au fil du quota mensuel.
+ * Les autres livres sont en arabe et en anglais.
  */
 export const tafsirBooks: TafsirBook[] = [
-  {
-    id: 'baye-niasse',
-    title: 'Tafsir Baye Niasse',
-    titleArabic: 'تفسير الشيخ إبراهيم نياس',
-    author: 'Cheikh Ibrahima Niasse',
-    description: 'Le Coran expliqué en wolof, sourate par sourate. Enregistrements audio.',
-    language: 'wolof',
-    kind: 'audio',
-    sourceNote: 'Sourates 41 à 43 absentes de la collection. Source : Internet Archive (Tafsir Baye NIASS).',
-  },
   {
     id: 'ibrahima-fall',
     title: 'Tafsir Oustaz Ibrahima Fall',
@@ -49,6 +42,18 @@ export const tafsirBooks: TafsirBook[] = [
     language: 'wolof',
     kind: 'audio',
     sourceNote: 'Les 114 sourates. Source : Internet Archive (Tafsir Coran de Oustaz Ibrahima Fall).',
+  },
+  {
+    id: 'muyassar-fr',
+    title: 'At-Tafsir Al-Muyassar · français',
+    titleArabic: 'التفسير الميسر',
+    author: 'Complexe du Roi Fahd',
+    description: 'Le tafsir simple et court, traduit en français. Traduction automatique, non vérifiée.',
+    language: 'french',
+    kind: 'text',
+    bayanSource: 'muyassar',
+    originalBookId: 'muyassar',
+    level: 'débutant',
   },
   {
     id: 'muyassar',
@@ -121,6 +126,7 @@ export const tafsirBooks: TafsirBook[] = [
 export const getTafsirBook = (id?: string) => tafsirBooks.find((b) => b.id === id);
 
 export const languageLabel: Record<TafsirLanguage, string> = {
+  french: 'Français',
   arabic: 'Arabe',
   english: 'Anglais',
   wolof: 'Wolof · audio',
