@@ -14,6 +14,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { useAppTheme } from '@/hooks/useAppTheme';
 import { useQuranStore } from '@/stores/quranStore';
 import { OfflineBanner } from '@/components/OfflineBanner';
+import { UpdateBanner } from '@/components/UpdateBanner';
 import { useReminderSync } from '@/hooks/useReminderSync';
 import { feedbackService } from '@/services/feedbackService';
 
@@ -85,6 +86,7 @@ export default function RootLayout() {
         <Stack.Screen name="tafsir/[bookId]" options={{ animation: 'slide_from_right' }} />
       </Stack>
       <OfflineBanner />
+      <UpdateBanner />
       <StatusBar style={isDark ? 'light' : 'dark'} />
     </ThemeProvider>
   );
