@@ -3,7 +3,6 @@ import { Alert, ScrollView, StyleSheet, Switch, Text, View } from 'react-native'
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import * as Application from 'expo-application';
 
 import {
   useSettingsStore,
@@ -24,6 +23,7 @@ import { AdhanPicker } from '@/components/AdhanPicker';
 import { APP_NAME, APP_TAGLINE } from '@/components/BrandMark';
 import { PoweredBy } from '@/components/PoweredBy';
 import { placeLabel } from '@/utils/cities';
+import { appVersion } from '@/utils/appVersion';
 import { PRAYER_METHODS } from '@/services/prayerTimesService';
 import { useOfflineStore } from '@/stores/offlineStore';
 import { reminderService, PRAYER_LABELS } from '@/services/reminderService';
@@ -398,7 +398,7 @@ export default function SettingsScreen() {
         </Group>
 
         <Text style={[Type.caption, { color: colors.textSubtle, textAlign: 'center', marginTop: Spacing.xxl }]}>
-          {APP_NAME} · {APP_TAGLINE} — version {Application.nativeApplicationVersion ?? '1.0.1'}
+          {APP_NAME} · {APP_TAGLINE} — version {appVersion ?? '1.0.1'}
         </Text>
         <PoweredBy />
         <CityPicker

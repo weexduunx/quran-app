@@ -4,7 +4,7 @@
  * à son propre versionCode Android.
  */
 import { Platform } from 'react-native';
-import * as Application from 'expo-application';
+import { appBuild } from '@/utils/appVersion';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const VERSION_URL = 'https://digitalspiritsn.com/applications/bayan/version.json';
@@ -18,7 +18,7 @@ export interface AvailableUpdate {
 }
 
 /** versionCode de l'APK installé (0 si inconnu) */
-export const installedVersionCode = () => Number(Application.nativeBuildVersion) || 0;
+export const installedVersionCode = () => Number(appBuild) || 0;
 
 export const updateService = {
   /** Renvoie la mise à jour proposée, ou null (à jour, déjà refusée, hors ligne, iOS…). */

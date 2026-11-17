@@ -6,7 +6,7 @@
  */
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as Application from 'expo-application';
+import { appBuild, appVersion } from '@/utils/appVersion';
 
 import { API_CONFIG, getDefaultHeaders } from '@/config/api';
 
@@ -50,8 +50,8 @@ function deviceInfo() {
     os_version: String(Platform.Version ?? ''),
     device: model.slice(0, 80),
     // Valeurs de l'APK installé (le versionCode est géré par EAS, absent de app.json)
-    app_version: Application.nativeApplicationVersion ?? '',
-    build: Application.nativeBuildVersion ?? '',
+    app_version: appVersion ?? '',
+    build: appBuild ?? '',
     locale: (() => {
       try {
         return Intl.DateTimeFormat().resolvedOptions().locale;
