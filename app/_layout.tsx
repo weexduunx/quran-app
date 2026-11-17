@@ -82,6 +82,8 @@ export default function RootLayout() {
         <Stack.Screen name="bookmarks" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="downloads" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="prayer-settings" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="adhkar" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="qibla" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="feedback" options={{ animation: 'slide_from_bottom' }} />
         <Stack.Screen name="tafsir/[bookId]" options={{ animation: 'slide_from_right' }} />
       </Stack>

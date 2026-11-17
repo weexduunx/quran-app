@@ -29,6 +29,29 @@ export interface ReadingReminder {
   minute: number;
 }
 
+/** Notification du verset du jour */
+export type VerseReminder = ReadingReminder;
+
+/** Rappels d'invocations : matin et soir suivent les heures de prière du lieu */
+export interface AdhkarReminders {
+  /** 20 min après Subha */
+  morning: boolean;
+  /** 20 min après Takussan */
+  evening: boolean;
+  sleep: boolean;
+  sleepHour: number;
+  sleepMinute: number;
+  /** Vendredi matin : Al-Kahf et prière sur le Prophète ﷺ */
+  friday: boolean;
+}
+
+/** Rappel d'une invocation du quotidien (jours : 1 = dimanche … 7 = samedi) */
+export interface DuaReminder {
+  hour: number;
+  minute: number;
+  days: number[];
+}
+
 /** Paliers de taille pour le texte arabe et la traduction */
 export const ARABIC_SIZES = [22, 26, 30, 34, 40] as const;
 export const TRANSLATION_SIZES = [14, 15, 16, 18, 20] as const;
@@ -51,6 +74,10 @@ interface SettingsState {
   hasOnboarded: boolean;
   prayerReminders: PrayerReminders;
   readingReminder: ReadingReminder;
+  verseReminder: VerseReminder;
+  adhkarReminders: AdhkarReminders;
+  /** Invocations du quotidien programmées, par identifiant */
+  duaReminders: Record<string, DuaReminder>;
   prayerCalc: PrayerCalc;
 
   setThemeMode: (mode: ThemeMode) => void;
@@ -63,6 +90,9 @@ interface SettingsState {
   completeOnboarding: () => void;
   setPrayerReminders: (patch: Partial<PrayerReminders>) => void;
   setReadingReminder: (patch: Partial<ReadingReminder>) => void;
+  setVerseReminder: (patch: Partial<VerseReminder>) => void;
+  setAdhkarReminders: (patch: Partial<AdhkarReminders>) => void;
+  setDuaReminder: (id: string, reminder: DuaReminder | null) => void;
   setPrayerCalc: (patch: Partial<PrayerCalc>) => void;
   setPrayerOffset: (key: keyof PrayerCalc['offsets'], minutes: number) => void;
   reset: () => void;
@@ -85,6 +115,9 @@ const defaults = {
     adhan: 'touba',
   } as PrayerReminders,
   readingReminder: { enabled: false, hour: 20, minute: 0 } as ReadingReminder,
+  verseReminder: { enabled: false, hour: 7, minute: 30 } as VerseReminder,
+  adhkarReminders: { morning: false, evening: false, sleep: false, sleepHour: 22, sleepMinute: 30, friday: false } as AdhkarReminders,
+  duaReminders: {} as Record<string, DuaReminder>,
   prayerCalc: DEFAULT_PRAYER_OPTIONS as PrayerCalc,
 };
 
@@ -112,6 +145,15 @@ export const useSettingsStore = create<SettingsState>()(
       completeOnboarding: () => set({ hasOnboarded: true }),
       setPrayerReminders: (patch) => set((s) => ({ prayerReminders: { ...s.prayerReminders, ...patch } })),
       setReadingReminder: (patch) => set((s) => ({ readingReminder: { ...s.readingReminder, ...patch } })),
+      setVerseReminder: (patch) => set((s) => ({ verseReminder: { ...s.verseReminder, ...patch } })),
+      setAdhkarReminders: (patch) => set((s) => ({ adhkarReminders: { ...s.adhkarReminders, ...patch } })),
+      setDuaReminder: (id, reminder) =>
+        set((s) => {
+          const next = { ...s.duaReminders };
+          if (reminder && reminder.days.length) next[id] = reminder;
+          else delete next[id];
+          return { duaReminders: next };
+        }),
       setPrayerCalc: (patch) =>
         set((s) => ({ prayerCalc: { ...s.prayerCalc, ...patch }, methodChosen: s.methodChosen || 'method' in patch })),
       setPrayerOffset: (key, minutes) =>

@@ -3,6 +3,7 @@ import { Alert, ScrollView, StyleSheet, Switch, Text, View } from 'react-native'
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import * as Application from 'expo-application';
 
 import {
   useSettingsStore,
@@ -37,8 +38,15 @@ export default function SettingsScreen() {
   const [cityPicker, setCityPicker] = useState(false);
   const downloadedCount = useOfflineStore((o) => Object.values(o.downloads).filter((d) => d.status === 'done').length);
 
-  const toggleReminder = async (kind: 'prayer' | 'reading') => {
-    const current = kind === 'prayer' ? s.prayerReminders.enabled : s.readingReminder.enabled;
+  const toggleReminder = async (kind: 'prayer' | 'reading' | 'verse' | 'morning' | 'evening' | 'sleep' | 'friday') => {
+    const current =
+      kind === 'prayer'
+        ? s.prayerReminders.enabled
+        : kind === 'reading'
+          ? s.readingReminder.enabled
+          : kind === 'verse'
+            ? s.verseReminder.enabled
+            : s.adhkarReminders[kind];
     if (!current) {
       const granted = await reminderService.requestPermission();
       if (!granted) {
@@ -50,8 +58,17 @@ export default function SettingsScreen() {
       }
     }
     if (kind === 'prayer') s.setPrayerReminders({ enabled: !current });
-    else s.setReadingReminder({ enabled: !current });
+    else if (kind === 'reading') s.setReadingReminder({ enabled: !current });
+    else if (kind === 'verse') s.setVerseReminder({ enabled: !current });
+    else s.setAdhkarReminders({ [kind]: !current });
   };
+
+  const shiftTime = (hour: number, minute: number, delta: number) => {
+    const total = (((hour * 60 + minute + delta) % 1440) + 1440) % 1440;
+    return { hour: Math.floor(total / 60), minute: total % 60 };
+  };
+  const hhmm = (h: number, m: number) => `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  const dailyDuaCount = Object.keys(s.duaReminders).length;
 
   const shiftReadingTime = (delta: number) => {
     const total = (((s.readingReminder.hour * 60 + s.readingReminder.minute + delta) % 1440) + 1440) % 1440;
@@ -277,9 +294,84 @@ export default function SettingsScreen() {
               value={`${String(s.readingReminder.hour).padStart(2, '0')}:${String(s.readingReminder.minute).padStart(2, '0')}`}
               onMinus={() => shiftReadingTime(-30)}
               onPlus={() => shiftReadingTime(30)}
+            />
+          )}
+          <Toggle
+            icon="sparkles-outline"
+            title="Verset du jour"
+            subtitle="Un verset à méditer chaque matin"
+            value={s.verseReminder.enabled}
+            onChange={() => toggleReminder('verse')}
+            last={!s.verseReminder.enabled}
+          />
+          {s.verseReminder.enabled && (
+            <Stepper
+              icon="time-outline"
+              title="Heure du verset"
+              value={hhmm(s.verseReminder.hour, s.verseReminder.minute)}
+              onMinus={() => s.setVerseReminder(shiftTime(s.verseReminder.hour, s.verseReminder.minute, -30))}
+              onPlus={() => s.setVerseReminder(shiftTime(s.verseReminder.hour, s.verseReminder.minute, 30))}
               last
             />
           )}
+        </Group>
+
+        <SectionTitle style={styles.sectionGap}>Invocations</SectionTitle>
+        <Group>
+          <Link
+            icon="walk-outline"
+            title="Invocations du quotidien"
+            subtitle={
+              dailyDuaCount
+                ? `${dailyDuaCount} rappel${dailyDuaCount > 1 ? 's' : ''} programmé${dailyDuaCount > 1 ? 's' : ''}`
+                : 'Sortir de la maison, monter en voiture… à votre heure'
+            }
+            onPress={() => router.push('/adhkar?moment=quotidien')}
+          />
+          <Toggle
+            icon="sunny-outline"
+            title="Invocations du matin"
+            subtitle="20 min après Subha, selon votre lieu"
+            value={s.adhkarReminders.morning}
+            onChange={() => toggleReminder('morning')}
+          />
+          <Toggle
+            icon="partly-sunny-outline"
+            title="Invocations du soir"
+            subtitle="20 min après Takussan, selon votre lieu"
+            value={s.adhkarReminders.evening}
+            onChange={() => toggleReminder('evening')}
+          />
+          <Toggle
+            icon="moon-outline"
+            title="Invocations du coucher"
+            subtitle="Chaque soir, à l'heure choisie"
+            value={s.adhkarReminders.sleep}
+            onChange={() => toggleReminder('sleep')}
+          />
+          {s.adhkarReminders.sleep && (
+            <Stepper
+              icon="time-outline"
+              title="Heure du coucher"
+              value={hhmm(s.adhkarReminders.sleepHour, s.adhkarReminders.sleepMinute)}
+              onMinus={() => {
+                const t = shiftTime(s.adhkarReminders.sleepHour, s.adhkarReminders.sleepMinute, -30);
+                s.setAdhkarReminders({ sleepHour: t.hour, sleepMinute: t.minute });
+              }}
+              onPlus={() => {
+                const t = shiftTime(s.adhkarReminders.sleepHour, s.adhkarReminders.sleepMinute, 30);
+                s.setAdhkarReminders({ sleepHour: t.hour, sleepMinute: t.minute });
+              }}
+            />
+          )}
+          <Toggle
+            icon="star-outline"
+            title="Vendredi"
+            subtitle="Al-Kahf et prière sur le Prophète ﷺ, à 9 h"
+            value={s.adhkarReminders.friday}
+            onChange={() => toggleReminder('friday')}
+            last
+          />
         </Group>
 
         <SectionTitle style={styles.sectionGap}>Version bêta</SectionTitle>
@@ -306,7 +398,7 @@ export default function SettingsScreen() {
         </Group>
 
         <Text style={[Type.caption, { color: colors.textSubtle, textAlign: 'center', marginTop: Spacing.xxl }]}>
-          {APP_NAME} · {APP_TAGLINE} — version 1.0.0
+          {APP_NAME} · {APP_TAGLINE} — version {Application.nativeApplicationVersion ?? '1.0.1'}
         </Text>
         <PoweredBy />
         <CityPicker

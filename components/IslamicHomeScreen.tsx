@@ -259,6 +259,8 @@ export const IslamicHomeScreen: React.FC = () => {
           />
           <Quick icon="mic-outline" title="Récitateurs" subtitle="Choisir une voix" onPress={() => router.push('/hafiz')} />
           <Quick icon="bookmark-outline" title="Favoris" subtitle="Vos versets" onPress={() => router.push('/bookmarks')} />
+          <Quick icon="hand-left-outline" title="Invocations" subtitle="Quotidien, matin et soir" onPress={() => router.push('/adhkar')} />
+          <Quick icon="compass-outline" title="Qibla" subtitle="Direction de La Mecque" onPress={() => router.push('/qibla')} />
         </View>
       </View>
 

@@ -18,6 +18,9 @@ export function useReminderSync() {
   const calc = useSettingsStore((s) => s.prayerCalc);
   const prayer = useSettingsStore((s) => s.prayerReminders);
   const reading = useSettingsStore((s) => s.readingReminder);
+  const verse = useSettingsStore((s) => s.verseReminder);
+  const adhkar = useSettingsStore((s) => s.adhkarReminders);
+  const duas = useSettingsStore((s) => s.duaReminders);
   const lastRead = useProgressStore((s) => s.lastRead);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -31,7 +34,7 @@ export function useReminderSync() {
       // Regroupe les changements rapprochés (défilement de lecture, réglages)
       timer.current = setTimeout(() => {
         reminderService
-          .sync({ place, calc, prayer, reading, lastRead: useProgressStore.getState().lastRead })
+          .sync({ place, calc, prayer, reading, verse, adhkar, duas, lastRead: useProgressStore.getState().lastRead })
           .catch((e) => console.warn('[rappels]', e));
       }, 1500);
     };
@@ -41,7 +44,7 @@ export function useReminderSync() {
       sub.remove();
       if (timer.current) clearTimeout(timer.current);
     };
-  }, [hydrated, place, calc, prayer, reading, lastKey]);
+  }, [hydrated, place, calc, prayer, reading, verse, adhkar, duas, lastKey]);
 
   // Toucher une notification ouvre l'écran prévu
   useEffect(() => {
