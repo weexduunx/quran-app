@@ -1,16 +1,13 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { setAudioModeAsync, useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
 
 import { useSettingsStore, type PrayerCalc } from '@/stores/settingsStore';
 import { PRAYER_METHODS, prayerTimesService, recommendedMethod, type AsrSchool } from '@/services/prayerTimesService';
 import { useAppTheme } from '@/hooks/useAppTheme';
 import { placeLabel } from '@/utils/cities';
-import { ADHANS, type AdhanEntry } from '@/utils/adhanManifest';
-import { defaultAdhan } from '@/utils/adhan';
 import { Radius, Spacing, Type } from '@/constants/theme';
 import { IconButton, Segmented, SectionTitle, Tap } from '@/components/ui/kit';
 import { CityPicker } from '@/components/CityPicker';
@@ -34,8 +31,6 @@ export default function PrayerSettingsScreen() {
   const calc = useSettingsStore((s) => s.prayerCalc);
   const setCalc = useSettingsStore((s) => s.setPrayerCalc);
   const setOffset = useSettingsStore((s) => s.setPrayerOffset);
-  const adhanId = useSettingsStore((s) => s.adhanId);
-  const setAdhanId = useSettingsStore((s) => s.setAdhanId);
   const [picker, setPicker] = useState(false);
 
   const times = useMemo(() => prayerTimesService.calculatePrayerTimes(new Date(), place, calc), [place, calc]);
@@ -165,9 +160,6 @@ export default function PrayerSettingsScreen() {
           })}
         </Group>
 
-        <SectionTitle style={styles.gap}>Adhan des notifications</SectionTitle>
-        <AdhanChooser value={adhanId} onChange={setAdhanId} />
-
         <View style={{ marginTop: Spacing.xxl }}>
           <PoweredBy />
         </View>
@@ -183,85 +175,6 @@ export default function PrayerSettingsScreen() {
         }}
       />
     </View>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Choix du muezzin, avec écoute
-// ---------------------------------------------------------------------------
-function AdhanChooser({ value, onChange }: { value: string; onChange: (id: string) => void }) {
-  const { colors } = useAppTheme();
-  const player = useAudioPlayer(null);
-  const status = useAudioPlayerStatus(player);
-  const [previewing, setPreviewing] = useState<string | null>(null);
-  const fallback = defaultAdhan();
-  const selected = value === 'auto' ? fallback?.id ?? 'system' : value;
-
-  useEffect(() => {
-    setAudioModeAsync({ playsInSilentMode: true }).catch(() => {});
-  }, []);
-  useEffect(() => {
-    if (status.didJustFinish) setPreviewing(null);
-  }, [status.didJustFinish]);
-
-  const preview = (a: AdhanEntry) => {
-    if (previewing === a.id) {
-      player.pause();
-      setPreviewing(null);
-      return;
-    }
-    player.replace(a.source);
-    player.play();
-    setPreviewing(a.id);
-  };
-
-  const options: { id: string; title: string; sub: string; entry?: AdhanEntry }[] = [
-    ...ADHANS.map((a) => ({
-      id: a.id,
-      title: a.name,
-      sub: [a.origin, a.isDefault ? 'par défaut' : '', a.fajrFile ? 'adhan spécial pour le Fajr' : ''].filter(Boolean).join(' · '),
-      entry: a,
-    })),
-    { id: 'system', title: 'Son du téléphone', sub: 'Notification courte, sans adhan' },
-  ];
-
-  return (
-    <>
-      <Group>
-        {options.map((o, i) => {
-          const active = selected === o.id;
-          return (
-            <Tap
-              key={o.id}
-              onPress={() => onChange(o.id)}
-              accessibilityRole="radio"
-              accessibilityState={{ checked: active }}
-              style={[styles.row, i < options.length - 1 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }]}
-            >
-              <Ionicons name={active ? 'radio-button-on' : 'radio-button-off'} size={22} color={active ? colors.primary : colors.textSubtle} />
-              <View style={{ flex: 1 }}>
-                <Text style={[Type.callout, { color: colors.text, fontWeight: active ? '600' : '400' }]}>{o.title}</Text>
-                {!!o.sub && <Text style={[Type.caption, { color: colors.textMuted }]}>{o.sub}</Text>}
-              </View>
-              {o.entry && (
-                <IconButton
-                  icon={previewing === o.id ? 'pause' : 'play'}
-                  label={previewing === o.id ? 'Arrêter' : `Écouter ${o.title}`}
-                  size={18}
-                  filled
-                  onPress={() => preview(o.entry!)}
-                />
-              )}
-            </Tap>
-          );
-        })}
-      </Group>
-      <Text style={[Type.caption, { color: colors.textMuted, marginTop: Spacing.sm }]}>
-        {ADHANS.length
-          ? 'L’adhan sonne pour les notifications « À l’heure ». Les rappels avant la prière gardent un son court.'
-          : 'Les adhans de muezzins sénégalais arrivent avec la prochaine mise à jour. En attendant, le son du téléphone est utilisé.'}
-      </Text>
-    </>
   );
 }
 

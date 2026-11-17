@@ -91,7 +91,6 @@ export const reminderService = {
   async sync(opts: {
     place: Place;
     calc: PrayerCalcOptions;
-    adhanId: string;
     prayer: PrayerReminders;
     reading: ReadingReminder;
     lastRead?: { surahNumber: number; surahId: number; verseNumber: number } | null;
@@ -134,7 +133,7 @@ export const reminderService = {
             await Notifications.scheduleNotificationAsync({
               content: {
                 title: `${label.wo} dans ${opts.prayer.minutesBefore} min · ${times[key].time}`,
-                body: `Prière de ${label.fr} à ${location.name}.`,
+                body: `Prière de ${label.fr} à ${where}.`,
                 data: { kind: 'prayer', url: '/' },
                 sound: 'default',
               },
@@ -147,7 +146,7 @@ export const reminderService = {
             await Notifications.scheduleNotificationAsync({
               content: {
                 title: `C'est l'heure de ${label.wo} · ${times[key].time}`,
-                body: `Prière de ${label.fr} à ${location.name}.`,
+                body: `Prière de ${label.fr} à ${where}.`,
                 data: { kind: 'prayer', url: '/' },
                 sound: adhan ? (Platform.OS === 'ios' ? adhan.ios : adhan.android) : 'default',
               },

@@ -52,8 +52,6 @@ interface SettingsState {
   prayerReminders: PrayerReminders;
   readingReminder: ReadingReminder;
   prayerCalc: PrayerCalc;
-  /** Adhan des notifications : 'auto' = muezzin par défaut, 'system' = son du téléphone, sinon id du muezzin */
-  adhanId: string;
 
   setThemeMode: (mode: ThemeMode) => void;
   setArabicSizeIndex: (i: number) => void;
@@ -67,7 +65,6 @@ interface SettingsState {
   setReadingReminder: (patch: Partial<ReadingReminder>) => void;
   setPrayerCalc: (patch: Partial<PrayerCalc>) => void;
   setPrayerOffset: (key: keyof PrayerCalc['offsets'], minutes: number) => void;
-  setAdhanId: (id: string) => void;
   reset: () => void;
 }
 
@@ -89,7 +86,6 @@ const defaults = {
   } as PrayerReminders,
   readingReminder: { enabled: false, hour: 20, minute: 0 } as ReadingReminder,
   prayerCalc: DEFAULT_PRAYER_OPTIONS as PrayerCalc,
-  adhanId: 'auto',
 };
 
 const clamp = (n: number, min: number, max: number) => Math.min(max, Math.max(min, n));
@@ -122,7 +118,6 @@ export const useSettingsStore = create<SettingsState>()(
         set((s) => ({
           prayerCalc: { ...s.prayerCalc, offsets: { ...s.prayerCalc.offsets, [key]: clamp(minutes, -30, 30) } },
         })),
-      setAdhanId: (adhanId) => set({ adhanId }),
       // La réinitialisation ne rejoue pas l'onboarding
       reset: () => set(defaults),
     }),
