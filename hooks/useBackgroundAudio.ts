@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { setAudioModeAsync, type AudioPlayer } from 'expo-audio';
 
 /**
@@ -26,12 +26,19 @@ export function useBackgroundAudio(
     }).catch(() => {});
   }, [playing]);
 
+  // Dernières métadonnées transmises : l'activation les envoie déjà, et le
+  // service Android se connecte en différé — un update immédiat avec les mêmes
+  // valeurs déclencherait l'avertissement « service not connected ».
+  const sent = useRef<string | null>(null);
+
   useEffect(() => {
     if (!active) return;
     try {
       player.setActiveForLockScreen(true, { title, artist }, { showSeekBackward: true, showSeekForward: true });
+      sent.current = `${title}\u0000${artist}`;
     } catch {}
     return () => {
+      sent.current = null;
       try {
         player.clearLockScreenControls();
       } catch {}
@@ -42,8 +49,11 @@ export function useBackgroundAudio(
 
   useEffect(() => {
     if (!active) return;
+    const key = `${title}\u0000${artist}`;
+    if (sent.current === key) return;
     try {
       player.updateLockScreenMetadata({ title, artist });
+      sent.current = key;
     } catch {}
   }, [player, active, title, artist]);
 }
