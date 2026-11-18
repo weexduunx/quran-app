@@ -27,7 +27,12 @@ import type {
   VerseReminder,
 } from '@/stores/settingsStore';
 
-const CHANNEL_PRAYER = 'prieres';
+// Android fige le son d'un canal à sa création : changer le suffixe (-v2…)
+// force la création d'un canal neuf quand sa configuration sonore change.
+const CHANNEL_PRAYER = 'prieres-v2';
+/** Anciens canaux de prière / d'adhan à supprimer (son figé, parfois muet). */
+const isLegacyPrayerChannel = (id: string) =>
+  id === 'prieres' || id.startsWith('adhan_') || /^adhan-[a-z]+$/.test(id);
 const CHANNEL_READING = 'lecture';
 const CHANNEL_ADHKAR = 'invocations';
 
@@ -57,9 +62,9 @@ async function verseText(global: number): Promise<string | null> {
  * (plugin expo-notifications) ; iOS limite le son à 30 s, d'où un extrait.
  */
 export const ADHANS: Record<Exclude<AdhanSound, 'none'>, { label: string; channel: string; android: string; ios: string }> = {
-  touba: { label: 'Touba', channel: 'adhan-touba', android: 'adhan_touba.mp3', ios: 'adhan_touba_ios.caf' },
-  senegal: { label: 'Sénégal', channel: 'adhan-senegal', android: 'adhan_senegal.mp3', ios: 'adhan_senegal_ios.caf' },
-  reunion: { label: 'Réunion', channel: 'adhan-reunion', android: 'adhan_reunion.mp3', ios: 'adhan_reunion_ios.caf' },
+  touba: { label: 'Touba', channel: 'adhan-touba-v2', android: 'adhan_touba.mp3', ios: 'adhan_touba_ios.caf' },
+  senegal: { label: 'Sénégal', channel: 'adhan-senegal-v2', android: 'adhan_senegal.mp3', ios: 'adhan_senegal_ios.caf' },
+  reunion: { label: 'Réunion', channel: 'adhan-reunion-v2', android: 'adhan_reunion.mp3', ios: 'adhan_reunion_ios.caf' },
 };
 
 export const PRAYER_LABELS: Record<PrayerKey, { fr: string; wo: string }> = {
@@ -84,10 +89,20 @@ export const reminderService = {
       }),
     });
     if (Platform.OS === 'android') {
+      Notifications.getNotificationChannelsAsync()
+        .then((channels) =>
+          Promise.all(
+            channels
+              .filter((ch) => isLegacyPrayerChannel(ch.id))
+              .map((ch) => Notifications.deleteNotificationChannelAsync(ch.id)),
+          ),
+        )
+        .catch(() => {});
+      // Pas de clé `sound` : sur un canal, 'default' serait pris pour un
+      // fichier « default » introuvable ; sans la clé, Android met le son par défaut.
       Notifications.setNotificationChannelAsync(CHANNEL_PRAYER, {
         name: 'Heures de prière',
         importance: Notifications.AndroidImportance.HIGH,
-        sound: 'default',
         vibrationPattern: [0, 250, 250, 250],
       }).catch(() => {});
       for (const a of Object.values(ADHANS)) {
