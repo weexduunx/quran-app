@@ -211,17 +211,23 @@ export function Chip({
   icon,
   active,
   onPress,
+  onLongPress,
+  accessibilityHint,
 }: {
   label: string;
   icon?: IconName;
   active?: boolean;
   onPress?: () => void;
+  onLongPress?: () => void;
+  accessibilityHint?: string;
 }) {
   const { colors } = useAppTheme();
   return (
     <Tap
       haptic
       onPress={onPress}
+      onLongPress={onLongPress}
+      accessibilityHint={accessibilityHint}
       style={[
         styles.chip,
         {

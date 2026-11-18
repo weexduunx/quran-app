@@ -19,6 +19,7 @@ import { DAILY_DUAS } from '@/utils/adhkar';
 import { verseOfTheDay } from '@/utils/quranMeta';
 import type {
   AdhanSound,
+  CustomAdhan,
   AdhkarReminders,
   DuaReminder,
   PrayerKey,
@@ -30,9 +31,12 @@ import type {
 // Android fige le son d'un canal à sa création : changer le suffixe (-v2…)
 // force la création d'un canal neuf quand sa configuration sonore change.
 const CHANNEL_PRAYER = 'prieres-v2';
-/** Anciens canaux de prière / d'adhan à supprimer (son figé, parfois muet). */
+/**
+ * Anciens canaux de prière / d'adhan à supprimer (son figé, parfois muet, ou
+ * adhan de Touba retiré). Jamais les canaux des adhans importés (adhan-perso-…).
+ */
 const isLegacyPrayerChannel = (id: string) =>
-  id === 'prieres' || id.startsWith('adhan_') || /^adhan-[a-z]+$/.test(id);
+  id === 'prieres' || id === 'adhan-touba-v2' || id.startsWith('adhan_') || /^adhan-[a-z]+$/.test(id);
 const CHANNEL_READING = 'lecture';
 const CHANNEL_ADHKAR = 'invocations';
 
@@ -61,11 +65,24 @@ async function verseText(global: number): Promise<string | null> {
  * création : un canal par adhan. Fichiers déclarés dans app.json
  * (plugin expo-notifications) ; iOS limite le son à 30 s, d'où un extrait.
  */
-export const ADHANS: Record<Exclude<AdhanSound, 'none'>, { label: string; channel: string; android: string; ios: string }> = {
-  touba: { label: 'Touba', channel: 'adhan-touba-v2', android: 'adhan_touba.mp3', ios: 'adhan_touba_ios.caf' },
+export type BuiltinAdhan = 'senegal' | 'reunion';
+export const ADHANS: Record<BuiltinAdhan, { label: string; channel: string; android: string; ios: string }> = {
   senegal: { label: 'Sénégal', channel: 'adhan-senegal-v2', android: 'adhan_senegal.mp3', ios: 'adhan_senegal_ios.caf' },
   reunion: { label: 'Réunion', channel: 'adhan-reunion-v2', android: 'adhan_reunion.mp3', ios: 'adhan_reunion_ios.caf' },
 };
+
+/**
+ * Son et canal de l'adhan choisi. Adhan importé : son canal Android porte le
+ * son (le champ `sound` ne sert pas) ; sur iOS, ou s'il a disparu, son normal.
+ */
+function resolveAdhan(key: AdhanSound, custom: CustomAdhan[]): { channel: string; android?: string; ios?: string } | null {
+  if (key === 'none') return null;
+  if (key.startsWith('custom-')) {
+    const found = Platform.OS === 'android' ? custom.find((a) => `custom-${a.id}` === key) : undefined;
+    return found ? { channel: found.channel } : null;
+  }
+  return ADHANS[key as BuiltinAdhan] ?? ADHANS.senegal;
+}
 
 export const PRAYER_LABELS: Record<PrayerKey, { fr: string; wo: string }> = {
   fajr: { fr: 'Fajr', wo: 'Subha' },
@@ -149,6 +166,7 @@ export const reminderService = {
     adhkar: AdhkarReminders;
     duas: Record<string, DuaReminder>;
     lastRead?: { surahNumber: number; surahId: number; verseNumber: number } | null;
+    customAdhans: CustomAdhan[];
   }) {
     this.configure();
 
@@ -177,8 +195,7 @@ export const reminderService = {
     for (const [, r] of duaEntries) repeating += r.days.length === 7 ? 1 : r.days.length;
 
     // Rappels datés, recalculés chaque jour : heures de prière, adhkâr matin/soir, verset du jour
-    const adhanKey = opts.prayer.adhan ?? 'touba';
-    const adhan = adhanKey === 'none' ? null : ADHANS[adhanKey];
+    const adhan = resolveAdhan(opts.prayer.adhan ?? 'senegal', opts.customAdhans);
     const early = opts.prayer.minutesBefore > 0;
     const prayersOn = opts.prayer.enabled ? Object.values(opts.prayer.prayers).filter(Boolean).length : 0;
     const perDay =
@@ -221,7 +238,7 @@ export const reminderService = {
                 title: `C'est l'heure de ${label.wo} · ${times[key].time}`,
                 body: `Prière de ${label.fr} à ${where}.`,
                 data: { kind: 'prayer', url: '/' },
-                sound: adhan ? (Platform.OS === 'ios' ? adhan.ios : adhan.android) : 'default',
+                sound: adhan ? (Platform.OS === 'ios' ? adhan.ios : adhan.android) ?? 'default' : 'default',
               },
               trigger: { type: DATE, date: time, channelId: adhan ? adhan.channel : CHANNEL_PRAYER },
             });

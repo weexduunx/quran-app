@@ -274,7 +274,7 @@ export default function SettingsScreen() {
                 onChange={(v) => s.setPrayerReminders({ minutesBefore: Number(v) })}
               />
               <AdhanPicker
-                value={s.prayerReminders.adhan ?? 'touba'}
+                value={s.prayerReminders.adhan ?? 'senegal'}
                 onChange={(adhan) => s.setPrayerReminders({ adhan })}
               />
             </View>

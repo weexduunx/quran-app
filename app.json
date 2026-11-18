@@ -62,12 +62,28 @@
         "expo-notifications",
         {
           "sounds": [
-            "./assets/notification-sounds/adhan_touba.mp3",
-            "./assets/notification-sounds/adhan_touba_ios.caf",
             "./assets/notification-sounds/adhan_senegal.mp3",
             "./assets/notification-sounds/adhan_senegal_ios.caf",
             "./assets/notification-sounds/adhan_reunion.mp3",
             "./assets/notification-sounds/adhan_reunion_ios.caf"
+          ]
+        }
+      ],
+      [
+        "react-native-android-widget",
+        {
+          "widgets": [
+            {
+              "name": "PrayerTimes",
+              "label": "Heures de prière",
+              "description": "Les cinq prières du jour et la prochaine, selon votre lieu",
+              "minWidth": "250dp",
+              "minHeight": "110dp",
+              "targetCellWidth": 4,
+              "targetCellHeight": 2,
+              "resizeMode": "horizontal|vertical",
+              "updatePeriodMillis": 1800000
+            }
           ]
         }
       ]

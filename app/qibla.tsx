@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Animated, Easing, StyleSheet, Text, View } from 'react-native';
+import { Animated, Easing, Pressable, StyleSheet, Text, View } from 'react-native';
+import Svg, { Circle, G, Path, Rect } from 'react-native-svg';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -10,7 +11,7 @@ import { useSettingsStore } from '@/stores/settingsStore';
 import { useAppTheme } from '@/hooks/useAppTheme';
 import { placeLabel } from '@/utils/cities';
 import { Radius, Spacing, Type } from '@/constants/theme';
-import { Button, IconButton } from '@/components/ui/kit';
+import { Button } from '@/components/ui/kit';
 
 /** La Kaaba, à La Mecque */
 const KAABA = { latitude: 21.4225, longitude: 39.8262 };
@@ -37,10 +38,12 @@ function distanceKm(lat: number, lng: number) {
   return 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-const CARDINALS = ['N', 'NE', 'E', 'SE', 'S', 'SO', 'O', 'NO'];
+const CARDINALS = ['nord', 'nord-est', 'est', 'sud-est', 'sud', 'sud-ouest', 'ouest', 'nord-ouest'];
 const cardinal = (d: number) => CARDINALS[Math.round(norm(d) / 45) % 8];
 
 type Status = 'loading' | 'ready' | 'denied' | 'unavailable';
+
+const DIAL = 300;
 
 export default function QiblaScreen() {
   const { colors } = useAppTheme();
@@ -86,9 +89,9 @@ export default function QiblaScreen() {
     };
   }, [attempt]);
 
-  // Le cadran tourne pour que la flèche indique toujours la Kaaba
-  const target = bearing - heading;
+  // Le cadran tourne avec le nord : la flèche (posée à l'angle de la Qibla) indique toujours la Kaaba
   useEffect(() => {
+    const target = -heading;
     const delta = ((target - unwrapped.current + 540) % 360) - 180;
     unwrapped.current += delta;
     Animated.timing(rotation, {
@@ -97,9 +100,9 @@ export default function QiblaScreen() {
       easing: Easing.out(Easing.quad),
       useNativeDriver: true,
     }).start();
-  }, [target, rotation]);
+  }, [heading, rotation]);
 
-  const offBy = Math.abs(((target % 360) + 540) % 360 - 180);
+  const offBy = Math.abs((((bearing - heading) % 360) + 540) % 360 - 180);
   const aligned = status === 'ready' && offBy <= ALIGNED;
   useEffect(() => {
     if (aligned && !wasAligned.current) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
@@ -107,24 +110,30 @@ export default function QiblaScreen() {
   }, [aligned]);
 
   const spin = rotation.interpolate({ inputRange: [-3600, 3600], outputRange: ['-3600deg', '3600deg'] });
-  const accent = aligned ? colors.gold : colors.primary;
+  const arrow = aligned ? colors.gold : colors.primary;
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
-      <View style={[styles.topBar, { paddingTop: insets.top + 4, borderBottomColor: colors.border }]}>
-        <IconButton icon="chevron-back" label="Retour" onPress={() => router.back()} />
-        <Text style={[Type.headline, { color: colors.text, flex: 1, textAlign: 'center' }]}>Qibla</Text>
-        <View style={{ width: 40 }} />
+      <View style={[styles.topBar, { paddingTop: insets.top + Spacing.sm }]}>
+        <Pressable
+          onPress={() => router.back()}
+          accessibilityRole="button"
+          accessibilityLabel="Retour"
+          style={[styles.back, { backgroundColor: colors.surface, borderColor: colors.border }]}
+        >
+          <Ionicons name="arrow-back" size={22} color={colors.text} />
+        </Pressable>
+        <Text style={[styles.title, { color: colors.text }]}>Qibla</Text>
       </View>
 
-      <View style={[styles.body, { paddingBottom: insets.bottom + Spacing.xl }]}>
+      <View style={[styles.body, { paddingBottom: insets.bottom + Spacing.lg }]}>
         <View style={{ alignItems: 'center', gap: 4 }}>
-          <Text style={[Type.caption, { color: colors.textMuted }]}>Depuis {placeLabel(place)}</Text>
-          <Text style={[Type.largeTitle, { color: colors.text, fontVariant: ['tabular-nums'] }]}>
-            {Math.round(bearing)}° {cardinal(bearing)}
+          <Text style={[styles.degrees, { color: arrow }]}>{Math.round(bearing)}°</Text>
+          <Text style={[Type.body, { color: colors.textMuted, textAlign: 'center' }]}>
+            Direction de La Mecque depuis {placeLabel(place)}
           </Text>
-          <Text style={[Type.caption, { color: colors.textMuted }]}>
-            La Mecque à {distance.toLocaleString('fr-FR')} km
+          <Text style={[Type.caption, { color: colors.textSubtle }]}>
+            Vers le {cardinal(bearing)} · {distance.toLocaleString('fr-FR')} km
           </Text>
         </View>
 
@@ -143,57 +152,94 @@ export default function QiblaScreen() {
           </View>
         ) : (
           <View style={styles.compassWrap}>
-            {/* Repère fixe en haut : la direction du téléphone */}
-            <Ionicons name="caret-down" size={28} color={accent} style={styles.marker} />
+            {/* Repère fixe : le haut du téléphone */}
+            <Ionicons name="caret-down" size={26} color={aligned ? colors.gold : colors.textSubtle} style={styles.marker} />
             <Animated.View
-              style={[styles.dial, { borderColor: accent, backgroundColor: colors.surface, transform: [{ rotate: spin }] }]}
-              accessibilityLabel={aligned ? 'Vous êtes face à la Qibla' : `Tournez de ${Math.round(offBy)} degrés`}
+              accessibilityRole="image"
+              accessibilityLabel={
+                aligned
+                  ? 'Vous êtes face à la Qibla'
+                  : `Boussole : la flèche verte indique la Qibla. Tournez de ${Math.round(offBy)} degrés`
+              }
+              style={[
+                styles.dial,
+                {
+                  backgroundColor: colors.surface,
+                  borderColor: aligned ? colors.gold : colors.border,
+                  transform: [{ rotate: spin }],
+                },
+              ]}
             >
-              {/* Le cadran tourne avec le nord ; la Kaaba est posée à son angle */}
-              <View style={styles.needle}>
-                <View style={[styles.kaaba, { backgroundColor: accent }]}>
-                  <Ionicons name="cube" size={22} color="#fff" />
-                </View>
-                <View style={[styles.stem, { backgroundColor: accent }]} />
-              </View>
-              <View style={[styles.center, { backgroundColor: accent }]} />
+              <Text style={[styles.cardinal, styles.north, { color: colors.danger }]}>N</Text>
+              <Text style={[styles.cardinal, styles.south, { color: colors.textSubtle }]}>S</Text>
+              <Text style={[styles.cardinal, styles.west, { color: colors.textSubtle }]}>O</Text>
+              <Text style={[styles.cardinal, styles.east, { color: colors.textSubtle }]}>E</Text>
+              <View style={[styles.ring, { borderColor: colors.border }]} />
+              <Svg width={DIAL} height={DIAL} viewBox="0 0 300 300" style={StyleSheet.absoluteFill}>
+                <G rotation={bearing} origin="150, 150">
+                  <Path d="M150 52 L163 150 L150 140 L137 150 Z" fill={arrow} />
+                  <Rect x={140} y={34} width={20} height={20} rx={3} fill={colors.text} />
+                  <Path d="M140 40.5 H160" stroke={colors.gold} strokeWidth={2.5} />
+                </G>
+                <Circle cx={150} cy={150} r={7} fill={colors.text} />
+              </Svg>
             </Animated.View>
           </View>
         )}
 
-        {status === 'ready' && (
-          <View style={{ alignItems: 'center', gap: Spacing.sm }}>
-            <Text style={[Type.title, { color: aligned ? colors.gold : colors.text }]}>
-              {aligned ? 'Vous êtes face à la Qibla' : `Tournez de ${Math.round(offBy)}°`}
+        <View style={styles.footer}>
+          {status === 'ready' && (
+            <View style={[styles.tip, { backgroundColor: aligned ? colors.goldSoft : colors.primarySoft }]}>
+              <Ionicons name={aligned ? 'checkmark-circle' : 'sync-outline'} size={24} color={arrow} />
+              <Text style={[styles.tipText, { color: colors.text }]}>
+                {aligned
+                  ? 'Vous êtes face à la Qibla.'
+                  : `Tournez le téléphone jusqu’à ce que la flèche pointe vers le haut (encore ${Math.round(offBy)}°).`}
+              </Text>
+            </View>
+          )}
+          {status === 'loading' && (
+            <Text style={[Type.caption, { color: colors.textMuted, textAlign: 'center' }]}>Activation de la boussole…</Text>
+          )}
+          {status === 'ready' && (
+            <Text style={[Type.caption, { color: accuracy < 2 ? colors.text : colors.textMuted, textAlign: 'center' }]}>
+              {accuracy < 2 ? 'Boussole imprécise. ' : ''}Éloignez le téléphone des objets métalliques. Si la boussole
+              hésite, faites un « 8 » dans l’air pour la recalibrer.
             </Text>
-            {accuracy < 2 && (
-              <View style={[styles.calibrate, { backgroundColor: colors.goldSoft }]}>
-                <Ionicons name="infinite-outline" size={18} color={colors.gold} />
-                <Text style={[Type.caption, { color: colors.text, flex: 1 }]}>
-                  Boussole imprécise : dessinez un « 8 » dans l’air avec le téléphone, loin des objets métalliques.
-                </Text>
-              </View>
-            )}
-          </View>
-        )}
-        {status === 'loading' && <Text style={[Type.caption, { color: colors.textMuted }]}>Activation de la boussole…</Text>}
+          )}
+        </View>
       </View>
     </View>
   );
 }
 
-const DIAL = 260;
-
 const styles = StyleSheet.create({
-  topBar: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.md, paddingBottom: Spacing.sm, borderBottomWidth: StyleSheet.hairlineWidth },
+  topBar: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, paddingHorizontal: Spacing.xl },
+  back: { width: 44, height: 44, borderRadius: 22, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  title: { fontSize: 28, lineHeight: 34, fontWeight: '700' },
   body: { flex: 1, alignItems: 'center', justifyContent: 'space-evenly', paddingHorizontal: Spacing.xl },
+  degrees: { fontSize: 48, lineHeight: 56, fontWeight: '700', fontVariant: ['tabular-nums'] },
   compassWrap: { alignItems: 'center' },
-  marker: { marginBottom: -4 },
-  dial: { width: DIAL, height: DIAL, borderRadius: DIAL / 2, borderWidth: 3, alignItems: 'center', justifyContent: 'center' },
-  needle: { position: 'absolute', top: 14, alignItems: 'center' },
-  kaaba: { width: 44, height: 44, borderRadius: Radius.md, alignItems: 'center', justifyContent: 'center' },
-  stem: { width: 4, height: DIAL / 2 - 14 - 44, borderRadius: 2 },
-  center: { width: 14, height: 14, borderRadius: 7 },
+  marker: { marginBottom: 2 },
+  dial: {
+    width: DIAL,
+    height: DIAL,
+    borderRadius: DIAL / 2,
+    borderWidth: 1,
+    shadowColor: '#17201C',
+    shadowOpacity: 0.06,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 3,
+  },
+  ring: { position: 'absolute', top: 44, left: 44, right: 44, bottom: 44, borderRadius: DIAL, borderWidth: 1, borderStyle: 'dashed' },
+  cardinal: { position: 'absolute', fontSize: 15, fontWeight: '600' },
+  north: { top: 14, left: 0, right: 0, textAlign: 'center', fontWeight: '700' },
+  south: { bottom: 14, left: 0, right: 0, textAlign: 'center' },
+  west: { left: 16, top: DIAL / 2 - 10 },
+  east: { right: 16, top: DIAL / 2 - 10 },
+  footer: { alignSelf: 'stretch', gap: Spacing.md },
   notice: { borderRadius: Radius.lg, borderWidth: StyleSheet.hairlineWidth, padding: Spacing.xl, alignItems: 'center', gap: Spacing.md },
-  calibrate: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, borderRadius: Radius.md, padding: Spacing.md, maxWidth: 340 },
+  tip: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, borderRadius: Radius.lg, padding: Spacing.lg },
+  tipText: { flex: 1, fontSize: 15, lineHeight: 21, fontWeight: '500' },
 });

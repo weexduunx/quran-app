@@ -48,7 +48,8 @@ export default function KidsHome() {
 
   const lettersHeard = useKidsStore((s) => s.lettersHeard.length);
   const duasHeard = useKidsStore((s) => s.duasHeard.length);
-  const totalStars = KIDS_SURAHS.reduce((sum, n) => sum + (stars[n] ?? 0), 0) + lettersHeard + duasHeard;
+  const gamesWon = useKidsStore((s) => s.gamesWon);
+  const totalStars = KIDS_SURAHS.reduce((sum, n) => sum + (stars[n] ?? 0), 0) + lettersHeard + duasHeard + gamesWon;
 
   return (
     <View style={{ flex: 1, backgroundColor: BG }}>
@@ -95,6 +96,23 @@ export default function KidsHome() {
             <Text style={[styles.sectionSub, { color: '#33215E' }]}>{duasHeard}/{KIDS_DUAS.length} ★</Text>
           </Tap>
         </View>
+
+        <Tap
+          haptic
+          onPress={() => router.push('/kids/jeu')}
+          accessibilityRole="button"
+          accessibilityLabel={`Jeu, trouve la lettre, ${gamesWon} parties gagnées`}
+          style={styles.game}
+        >
+          <View style={styles.gameIcon}>
+            <Ionicons name="game-controller" size={34} color="#D8EBC3" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.sectionTitle, { color: '#2E4A12' }]}>Trouve la lettre</Text>
+            <Text style={[styles.sectionSub, { color: '#2E4A12' }]}>Écoute et joue · {gamesWon} ★</Text>
+          </View>
+          <Ionicons name="play" size={28} color="#2E4A12" />
+        </Tap>
 
         <Text style={styles.gridTitle}>Mes petites sourates</Text>
         <View style={styles.grid}>
@@ -153,6 +171,7 @@ function ParentPanel({ visible, onClose }: { visible: boolean; onClose: () => vo
   const coverage = kidsAudioCoverage();
   const lettersHeard = useKidsStore((s) => s.lettersHeard.length);
   const duasHeard = useKidsStore((s) => s.duasHeard.length);
+  const gamesWon = useKidsStore((s) => s.gamesWon);
 
   const offline = KIDS_SURAHS.filter((n) => downloads[downloadKey(KIDS_RECITER_ID, n)]?.status === 'done').length;
   const downloading = KIDS_SURAHS.some((n) => downloads[downloadKey(KIDS_RECITER_ID, n)]?.status === 'downloading');
@@ -232,7 +251,7 @@ function ParentPanel({ visible, onClose }: { visible: boolean; onClose: () => vo
           ))}
         </View>
         <Text style={[styles.optionSub, { marginTop: 4 }]}>
-          Lettres écoutées : {lettersHeard}/28 · Invocations apprises : {duasHeard}/{KIDS_DUAS.length}
+          Lettres écoutées : {lettersHeard}/28 · Invocations apprises : {duasHeard}/{KIDS_DUAS.length} · Parties de jeu gagnées : {gamesWon}
         </Text>
         <Tap onPress={resetProgress} style={{ alignSelf: 'center', padding: Spacing.md, marginTop: Spacing.sm }}>
           <Text style={{ color: '#B3261E', fontWeight: '600' }}>Remettre les étoiles à zéro</Text>
@@ -270,6 +289,17 @@ const styles = StyleSheet.create({
   sectionGlyph: { fontFamily: ArabicFonts.bold, fontSize: 34, lineHeight: 48, textAlign: 'right' },
   sectionTitle: { fontSize: 19, fontWeight: '800' },
   sectionSub: { fontSize: 14, fontWeight: '700', opacity: 0.8 },
+  game: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    backgroundColor: '#D8EBC3',
+    borderRadius: 28,
+    padding: 16,
+    marginHorizontal: Spacing.xl,
+    marginTop: 14,
+  },
+  gameIcon: { width: 60, height: 60, borderRadius: 30, backgroundColor: '#2E4A12', alignItems: 'center', justifyContent: 'center' },
   gridTitle: { fontSize: 20, fontWeight: '800', color: INK, paddingHorizontal: Spacing.xl, marginTop: Spacing.xxl },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 14, paddingHorizontal: Spacing.xl, marginTop: Spacing.md },
   card: { width: '47.5%', minHeight: 176, borderRadius: 28, padding: 16, justifyContent: 'space-between' },

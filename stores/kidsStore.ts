@@ -15,12 +15,15 @@ interface KidsState {
   /** Lettres et invocations déjà écoutées (une étoile chacune) */
   lettersHeard: number[];
   duasHeard: number[];
+  /** Parties du jeu « Trouve la lettre » terminées (une étoile chacune) */
+  gamesWon: number;
 
   completeSession: (surah: number) => number;
   setMode: (mode: KidsMode) => void;
   setLocked: (locked: boolean) => void;
   markLetter: (n: number) => void;
   markDua: (n: number) => void;
+  completeGame: () => void;
   resetProgress: () => void;
 }
 
@@ -33,6 +36,7 @@ export const useKidsStore = create<KidsState>()(
       locked: false,
       lettersHeard: [],
       duasHeard: [],
+      gamesWon: 0,
 
       /** Une étoile par séance terminée, jusqu'à 3. Renvoie le nouveau total d'étoiles. */
       completeSession: (surah) => {
@@ -47,7 +51,8 @@ export const useKidsStore = create<KidsState>()(
       setLocked: (locked) => set({ locked }),
       markLetter: (n) => set((s) => (s.lettersHeard.includes(n) ? s : { lettersHeard: [...s.lettersHeard, n] })),
       markDua: (n) => set((s) => (s.duasHeard.includes(n) ? s : { duasHeard: [...s.duasHeard, n] })),
-      resetProgress: () => set({ stars: {}, sessions: {}, lettersHeard: [], duasHeard: [] }),
+      completeGame: () => set((s) => ({ gamesWon: s.gamesWon + 1 })),
+      resetProgress: () => set({ stars: {}, sessions: {}, lettersHeard: [], duasHeard: [], gamesWon: 0 }),
     }),
     { name: 'kids-store', storage: createJSONStorage(() => AsyncStorage) }
   )

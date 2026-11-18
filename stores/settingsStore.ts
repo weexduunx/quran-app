@@ -9,14 +9,25 @@ import { DEFAULT_PLACE, findCity, type Place } from '@/utils/cities';
 export type ThemeMode = 'system' | 'light' | 'dark';
 export type PrayerKey = 'fajr' | 'dhuhr' | 'asr' | 'maghrib' | 'isha';
 
-export type AdhanSound = 'touba' | 'senegal' | 'reunion' | 'none';
+/** Adhan intégré, adhan ajouté par l'utilisateur (`custom-<id>`) ou son normal */
+export type AdhanSound = 'senegal' | 'reunion' | 'none' | `custom-${string}`;
+
+/** Adhan importé par l'utilisateur (Android) : son copié + canal de notification dédié */
+export interface CustomAdhan {
+  id: string;
+  label: string;
+  /** Canal Android créé avec ce son */
+  channel: string;
+  /** URI content:// du son dans les sonneries de notification */
+  uri: string;
+}
 
 export interface PrayerReminders {
   enabled: boolean;
   prayers: Record<PrayerKey, boolean>;
   /** Minutes avant l'heure (0 = à l'heure) */
   minutesBefore: number;
-  /** Adhan joué à l'heure de la prière (absent dans les anciens réglages : Touba) */
+  /** Adhan joué à l'heure de la prière (absent dans les anciens réglages : Sénégal) */
   adhan?: AdhanSound;
 }
 
@@ -79,6 +90,8 @@ interface SettingsState {
   /** Invocations du quotidien programmées, par identifiant */
   duaReminders: Record<string, DuaReminder>;
   prayerCalc: PrayerCalc;
+  /** Adhans ajoutés par l'utilisateur */
+  customAdhans: CustomAdhan[];
 
   setThemeMode: (mode: ThemeMode) => void;
   setArabicSizeIndex: (i: number) => void;
@@ -95,6 +108,8 @@ interface SettingsState {
   setDuaReminder: (id: string, reminder: DuaReminder | null) => void;
   setPrayerCalc: (patch: Partial<PrayerCalc>) => void;
   setPrayerOffset: (key: keyof PrayerCalc['offsets'], minutes: number) => void;
+  addCustomAdhan: (adhan: CustomAdhan) => void;
+  removeCustomAdhan: (id: string) => void;
   reset: () => void;
 }
 
@@ -112,7 +127,7 @@ const defaults = {
     enabled: false,
     prayers: { fajr: true, dhuhr: true, asr: true, maghrib: true, isha: true },
     minutesBefore: 0,
-    adhan: 'touba',
+    adhan: 'senegal',
   } as PrayerReminders,
   readingReminder: { enabled: false, hour: 20, minute: 0 } as ReadingReminder,
   verseReminder: { enabled: false, hour: 7, minute: 30 } as VerseReminder,
@@ -128,6 +143,7 @@ export const useSettingsStore = create<SettingsState>()(
     (set) => ({
       ...defaults,
       hasOnboarded: false,
+      customAdhans: [],
       setThemeMode: (themeMode) => set({ themeMode }),
       setArabicSizeIndex: (i) => set({ arabicSizeIndex: clamp(i, 0, ARABIC_SIZES.length - 1) }),
       setTranslationSizeIndex: (i) =>
@@ -160,8 +176,20 @@ export const useSettingsStore = create<SettingsState>()(
         set((s) => ({
           prayerCalc: { ...s.prayerCalc, offsets: { ...s.prayerCalc.offsets, [key]: clamp(minutes, -30, 30) } },
         })),
-      // La réinitialisation ne rejoue pas l'onboarding
-      reset: () => set(defaults),
+      addCustomAdhan: (adhan) =>
+        set((s) => ({
+          customAdhans: [...s.customAdhans, adhan],
+          prayerReminders: { ...s.prayerReminders, adhan: `custom-${adhan.id}` },
+        })),
+      removeCustomAdhan: (id) =>
+        set((s) => ({
+          customAdhans: s.customAdhans.filter((a) => a.id !== id),
+          // L'adhan supprimé était choisi : retour à l'adhan sénégalais
+          prayerReminders:
+            s.prayerReminders.adhan === `custom-${id}` ? { ...s.prayerReminders, adhan: 'senegal' } : s.prayerReminders,
+        })),
+      // La réinitialisation ne rejoue pas l'onboarding et garde les adhans importés (fichiers sur le téléphone)
+      reset: () => set((s) => ({ ...defaults, customAdhans: s.customAdhans })),
     }),
     {
       name: 'settings-store',
@@ -176,6 +204,13 @@ export const useSettingsStore = create<SettingsState>()(
           ...p,
           place,
           city: place.name,
+          customAdhans: p.customAdhans ?? [],
+          // L'adhan de Touba a été retiré : ceux qui l'avaient passent à l'adhan sénégalais
+          prayerReminders: {
+            ...current.prayerReminders,
+            ...p.prayerReminders,
+            adhan: (p.prayerReminders?.adhan as string) === 'touba' ? 'senegal' : (p.prayerReminders?.adhan ?? 'senegal'),
+          },
           prayerCalc: {
             ...DEFAULT_PRAYER_OPTIONS,
             ...p.prayerCalc,

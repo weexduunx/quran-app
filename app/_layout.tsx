@@ -16,6 +16,7 @@ import { useQuranStore } from '@/stores/quranStore';
 import { OfflineBanner } from '@/components/OfflineBanner';
 import { UpdateBanner } from '@/components/UpdateBanner';
 import { useReminderSync } from '@/hooks/useReminderSync';
+import { usePrayerWidgetSync } from '@/hooks/usePrayerWidgetSync';
 import { feedbackService } from '@/services/feedbackService';
 
 SplashScreen.preventAutoHideAsync();
@@ -27,6 +28,7 @@ export const unstable_settings = {
 export default function RootLayout() {
   const { colors, isDark } = useAppTheme();
   useReminderSync();
+  usePrayerWidgetSync();
   const setOffline = useQuranStore((s) => s.setOffline);
 
   const [fontsLoaded, fontError] = useFonts({
@@ -78,6 +80,7 @@ export default function RootLayout() {
         <Stack.Screen name="kids/alphabet" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="kids/lettre/[n]" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="kids/invocations" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="kids/jeu" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="surah/[id]" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="bookmarks" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="downloads" options={{ animation: 'slide_from_right' }} />
