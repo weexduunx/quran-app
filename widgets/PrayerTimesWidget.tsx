@@ -13,8 +13,53 @@ const THEMES: Record<'light' | 'dark', { bg: Hex; text: Hex; muted: Hex; accent:
   dark: { bg: '#121C19', text: '#EBEFEA', muted: '#A3ADA7', accent: '#48B98F', pill: '#48B98F', pillText: '#0B1311' },
 };
 
-export function PrayerTimesWidget({ data, theme }: { data: PrayerWidgetData; theme: 'light' | 'dark' }) {
+/** Taille réelle du widget en dp (fournie par Android ; inconnue : grand format) */
+export type WidgetSize = { width?: number; height?: number };
+
+export function PrayerTimesWidget({ data, theme, size }: { data: PrayerWidgetData; theme: 'light' | 'dark'; size?: WidgetSize }) {
   const c = THEMES[theme];
+  const width = size?.width || 320;
+  const height = size?.height || 140;
+  // Une seule rangée de cellules : la prochaine prière seulement
+  const oneRow = height < 90;
+  // Étroit : les cinq horaires en plus petit, le lieu masqué
+  const narrow = width < 250;
+  const tiny = width < 210;
+
+  if (oneRow || tiny) {
+    return (
+      <FlexWidget
+        clickAction="OPEN_APP"
+        accessibilityLabel={`Prochaine prière : ${data.next.name} à ${data.next.time}, ${data.place}`}
+        style={{
+          height: 'match_parent',
+          width: 'match_parent',
+          backgroundColor: c.bg,
+          borderRadius: 20,
+          paddingHorizontal: 12,
+          paddingVertical: 6,
+          flexDirection: oneRow && !tiny ? 'row' : 'column',
+          alignItems: oneRow && !tiny ? 'center' : 'flex-start',
+          justifyContent: oneRow && !tiny ? 'space-between' : 'center',
+        }}
+      >
+        <TextWidget
+          text={data.next.tomorrow ? 'Demain' : 'Prochaine'}
+          style={{ fontSize: 11, color: c.muted, fontWeight: '600' }}
+        />
+        <TextWidget
+          text={`${data.next.name} · ${data.next.time}`}
+          maxLines={1}
+          truncate="END"
+          style={{ fontSize: tiny ? 16 : 18, color: c.accent, fontWeight: '700' }}
+        />
+        {oneRow && !tiny && !narrow && (
+          <TextWidget text={data.place} maxLines={1} truncate="END" style={{ fontSize: 11, color: c.muted }} />
+        )}
+      </FlexWidget>
+    );
+  }
+
   return (
     <FlexWidget
       clickAction="OPEN_APP"
@@ -24,8 +69,8 @@ export function PrayerTimesWidget({ data, theme }: { data: PrayerWidgetData; the
         width: 'match_parent',
         backgroundColor: c.bg,
         borderRadius: 24,
-        paddingHorizontal: 16,
-        paddingVertical: 12,
+        paddingHorizontal: narrow ? 10 : 16,
+        paddingVertical: narrow ? 8 : 12,
         flexDirection: 'column',
         justifyContent: 'space-between',
       }}
@@ -39,10 +84,12 @@ export function PrayerTimesWidget({ data, theme }: { data: PrayerWidgetData; the
           />
           <TextWidget
             text={`${data.next.name} · ${data.next.time}`}
-            style={{ fontSize: 22, color: c.accent, fontWeight: '700' }}
+            style={{ fontSize: narrow ? 18 : 22, color: c.accent, fontWeight: '700' }}
           />
         </FlexWidget>
-        <TextWidget text={data.place} maxLines={1} truncate="END" style={{ fontSize: 12, color: c.muted, textAlign: 'right' }} />
+        {!narrow && (
+          <TextWidget text={data.place} maxLines={1} truncate="END" style={{ fontSize: 12, color: c.muted, textAlign: 'right' }} />
+        )}
       </FlexWidget>
 
       {/* Les cinq prières du jour */}
@@ -53,14 +100,22 @@ export function PrayerTimesWidget({ data, theme }: { data: PrayerWidgetData; the
             style={{
               flexDirection: 'column',
               alignItems: 'center',
-              paddingHorizontal: 8,
-              paddingVertical: 4,
-              borderRadius: 12,
+              paddingHorizontal: narrow ? 3 : 8,
+              paddingVertical: narrow ? 2 : 4,
+              borderRadius: narrow ? 8 : 12,
               backgroundColor: p.next ? c.pill : '#00000000',
             }}
           >
-            <TextWidget text={p.name} style={{ fontSize: 11, color: p.next ? c.pillText : c.muted, fontWeight: '600' }} />
-            <TextWidget text={p.time} style={{ fontSize: 15, color: p.next ? c.pillText : c.text, fontWeight: '700' }} />
+            <TextWidget
+              text={narrow && p.name.length > 6 ? `${p.name.slice(0, 5)}.` : p.name}
+              maxLines={1}
+              style={{ fontSize: narrow ? 9 : 11, color: p.next ? c.pillText : c.muted, fontWeight: '600' }}
+            />
+            <TextWidget
+              text={p.time}
+              maxLines={1}
+              style={{ fontSize: narrow ? 12 : 15, color: p.next ? c.pillText : c.text, fontWeight: '700' }}
+            />
           </FlexWidget>
         ))}
       </FlexWidget>
@@ -69,7 +124,7 @@ export function PrayerTimesWidget({ data, theme }: { data: PrayerWidgetData; the
 }
 
 /** Version claire et sombre : Android choisit selon le thème du téléphone */
-export const renderPrayerWidget = (data: PrayerWidgetData) => ({
-  light: <PrayerTimesWidget data={data} theme="light" />,
-  dark: <PrayerTimesWidget data={data} theme="dark" />,
+export const renderPrayerWidget = (data: PrayerWidgetData, size?: WidgetSize) => ({
+  light: <PrayerTimesWidget data={data} theme="light" size={size} />,
+  dark: <PrayerTimesWidget data={data} theme="dark" size={size} />,
 });

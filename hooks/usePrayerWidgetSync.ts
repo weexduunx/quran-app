@@ -19,7 +19,7 @@ export function usePrayerWidgetSync() {
     const update = () =>
       requestWidgetUpdate({
         widgetName: PRAYER_WIDGET_NAME,
-        renderWidget: () => renderPrayerWidget(prayerWidgetData(place, calc)),
+        renderWidget: (info) => renderPrayerWidget(prayerWidgetData(place, calc), info),
       }).catch(() => {});
     update();
     const sub = AppState.addEventListener('change', (s) => s === 'active' && update());

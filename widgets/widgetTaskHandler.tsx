@@ -15,5 +15,6 @@ export async function widgetTaskHandler({ widgetInfo, widgetAction, renderWidget
   // App fermée : on relit les réglages enregistrés (lieu, convention de calcul)
   if (!useSettingsStore.persist.hasHydrated()) await useSettingsStore.persist.rehydrate();
   const { place, prayerCalc } = useSettingsStore.getState();
-  renderWidget(renderPrayerWidget(prayerWidgetData(place, prayerCalc)));
+  // Mise en page selon la taille réelle (ajout et redimensionnement)
+  renderWidget(renderPrayerWidget(prayerWidgetData(place, prayerCalc), widgetInfo));
 }
