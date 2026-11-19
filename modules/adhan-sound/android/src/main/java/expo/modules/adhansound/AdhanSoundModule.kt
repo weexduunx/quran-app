@@ -1,14 +1,18 @@
 package expo.modules.adhansound
 
+import android.app.AlarmManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.ContentValues
 import android.content.Context
+import android.content.Intent
 import android.media.AudioAttributes
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
+import android.os.PowerManager
+import android.provider.Settings
 import android.provider.MediaStore
 import expo.modules.kotlin.exception.CodedException
 import expo.modules.kotlin.exception.Exceptions
@@ -39,6 +43,41 @@ class AdhanSoundModule : Module() {
 
     Function("isSupported") {
       Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
+    }
+
+    /** Vrai si le son (res/raw, sans extension) est bien intégré à cet APK */
+    Function("hasRawSound") { name: String ->
+      context.resources.getIdentifier(name, "raw", context.packageName) != 0
+    }
+
+    /** Notifications programmées à l'heure exacte (sinon Android peut les retarder ou les perdre en veille) */
+    Function("canScheduleExactAlarms") {
+      if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return@Function true
+      (context.getSystemService(Context.ALARM_SERVICE) as AlarmManager).canScheduleExactAlarms()
+    }
+
+    /** Page système « Alarmes et rappels » de l'app */
+    Function("openExactAlarmSettings") {
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        startSettings(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:${context.packageName}")))
+      } else {
+        startSettings(appDetails())
+      }
+    }
+
+    /** Vrai si l'app échappe à l'optimisation de batterie (rappels fiables en veille) */
+    Function("isIgnoringBatteryOptimizations") {
+      if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return@Function true
+      (context.getSystemService(Context.POWER_SERVICE) as PowerManager).isIgnoringBatteryOptimizations(context.packageName)
+    }
+
+    /** Liste système des optimisations de batterie (pas de demande directe : règle Play Store) */
+    Function("openBatterySettings") {
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+        startSettings(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+      } else {
+        startSettings(appDetails())
+      }
     }
 
     /** Copie le fichier, crée le canal ; renvoie l'URI content:// du son. */
@@ -89,6 +128,19 @@ class AdhanSoundModule : Module() {
         // Fichier déjà supprimé par l'utilisateur : rien à faire
       }
       Unit
+    }
+  }
+
+  private fun appDetails() =
+    Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}"))
+
+  private fun startSettings(intent: Intent) {
+    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    try {
+      context.startActivity(intent)
+    } catch (_: Throwable) {
+      // Page absente sur certaines surcouches constructeur : fiche de l'app
+      context.startActivity(appDetails().addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
   }
 

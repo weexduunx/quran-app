@@ -5,6 +5,11 @@ interface AdhanSoundNative {
   isSupported(): boolean;
   installAsync(sourceUri: string, fileName: string, channelId: string, channelName: string): Promise<string>;
   removeAsync(soundUri: string, channelId: string): Promise<void>;
+  hasRawSound?(name: string): boolean;
+  canScheduleExactAlarms?(): boolean;
+  openExactAlarmSettings?(): void;
+  isIgnoringBatteryOptimizations?(): boolean;
+  openBatterySettings?(): void;
 }
 
 // Optionnel : un client de dev construit avant l'ajout du module ne l'a pas
@@ -21,4 +26,34 @@ export function installAdhanSound(sourceUri: string, fileName: string, channelId
 
 export async function removeAdhanSound(soundUri: string, channelId: string) {
   await native?.removeAsync(soundUri, channelId);
+}
+
+/**
+ * Fiabilité des rappels sur Android. `null` : inconnu (iOS, ou client
+ * construit avant l'ajout de ces fonctions) — on n'affiche alors rien.
+ */
+export function reminderReliability(): { exactAlarms: boolean | null; battery: boolean | null } {
+  try {
+    return {
+      exactAlarms: native?.canScheduleExactAlarms ? native.canScheduleExactAlarms() : null,
+      battery: native?.isIgnoringBatteryOptimizations ? native.isIgnoringBatteryOptimizations() : null,
+    };
+  } catch {
+    return { exactAlarms: null, battery: null };
+  }
+}
+
+export const openExactAlarmSettings = () => native?.openExactAlarmSettings?.();
+export const openBatterySettings = () => native?.openBatterySettings?.();
+
+/**
+ * Vrai si le son de notification est intégré au binaire Android. Faux sur un
+ * client construit avant son ajout (la fonction native y manque aussi).
+ */
+export function hasBundledSound(name: string): boolean {
+  try {
+    return !!native?.hasRawSound?.(name);
+  } catch {
+    return false;
+  }
 }

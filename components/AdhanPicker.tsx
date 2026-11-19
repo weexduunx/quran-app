@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
-import * as DocumentPicker from 'expo-document-picker';
+import { requireOptionalNativeModule } from 'expo';
 import { Ionicons } from '@expo/vector-icons';
 
 import { Chip, IconButton } from '@/components/ui/kit';
@@ -10,6 +10,11 @@ import { Radius, Spacing, Type } from '@/constants/theme';
 import { ADHANS, type BuiltinAdhan } from '@/services/reminderService';
 import { useSettingsStore, type AdhanSound } from '@/stores/settingsStore';
 import { customAdhanSupported, installAdhanSound, removeAdhanSound } from '@/modules/adhan-sound';
+
+// Un client construit avant l'ajout d'expo-document-picker n'a pas son module
+// natif : l'importer d'office ferait planter tout l'écran des réglages.
+const hasDocumentPicker = !!requireOptionalNativeModule('ExpoDocumentPicker');
+const canImportAdhan = customAdhanSupported && hasDocumentPicker;
 
 /** Fichiers pour l'écoute dans les réglages (les mêmes que ceux des notifications) */
 const PREVIEW: Record<BuiltinAdhan, number> = {
@@ -75,6 +80,7 @@ export function AdhanPicker({ value, onChange }: { value: AdhanSound; onChange: 
 
   const importAdhan = async () => {
     if (importing) return;
+    const DocumentPicker = await import('expo-document-picker');
     const picked = await DocumentPicker.getDocumentAsync({ type: 'audio/*', copyToCacheDirectory: true });
     if (picked.canceled || !picked.assets?.[0]) return;
     const file = picked.assets[0];
@@ -143,7 +149,7 @@ export function AdhanPicker({ value, onChange }: { value: AdhanSound; onChange: 
         )}
       </View>
 
-      {customAdhanSupported && (
+      {canImportAdhan && (
         <Pressable
           onPress={importAdhan}
           disabled={importing}

@@ -20,6 +20,7 @@ import { ArabicFonts, Radius, Spacing, Type } from '@/constants/theme';
 import { Chip, IconButton, Segmented, SectionTitle, Tap } from '@/components/ui/kit';
 import { CityPicker } from '@/components/CityPicker';
 import { AdhanPicker } from '@/components/AdhanPicker';
+import { ReminderReliability } from '@/components/ReminderReliability';
 import { APP_NAME, APP_TAGLINE } from '@/components/BrandMark';
 import { PoweredBy } from '@/components/PoweredBy';
 import { placeLabel } from '@/utils/cities';
@@ -27,7 +28,7 @@ import { appVersion } from '@/utils/appVersion';
 import { PRAYER_METHODS } from '@/services/prayerTimesService';
 import { useOfflineStore } from '@/stores/offlineStore';
 import { reminderService, PRAYER_LABELS } from '@/services/reminderService';
-import type { PrayerKey } from '@/stores/settingsStore';
+import { ALL_PRAYERS_ON, type PrayerKey } from '@/stores/settingsStore';
 
 type IconName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -277,6 +278,34 @@ export default function SettingsScreen() {
                 value={s.prayerReminders.adhan ?? 'senegal'}
                 onChange={(adhan) => s.setPrayerReminders({ adhan })}
               />
+              {(s.prayerReminders.adhan ?? 'senegal') !== 'none' && (
+                <View style={{ gap: Spacing.sm }}>
+                  <Text style={[Type.caption, { color: colors.textMuted }]}>
+                    Prières avec l&apos;adhan (les autres sonnent avec le rappel)
+                  </Text>
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm }}>
+                    {(Object.keys(PRAYER_LABELS) as PrayerKey[])
+                      .filter((k) => s.prayerReminders.prayers[k])
+                      .map((k) => {
+                        const on = s.prayerReminders.adhanPrayers?.[k] !== false;
+                        return (
+                          <Chip
+                            key={k}
+                            label={PRAYER_LABELS[k].wo}
+                            icon={on ? 'volume-high-outline' : 'notifications-outline'}
+                            active={on}
+                            onPress={() =>
+                              s.setPrayerReminders({
+                                adhanPrayers: { ...ALL_PRAYERS_ON, ...s.prayerReminders.adhanPrayers, [k]: !on },
+                              })
+                            }
+                          />
+                        );
+                      })}
+                  </View>
+                </View>
+              )}
+              <ReminderReliability />
             </View>
           )}
           <Toggle

@@ -1,0 +1,9 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <!--
+    Heures de prière à la minute près : sans cette autorisation, Android
+    (12 et plus) retarde ou regroupe les notifications programmées, et
+    certaines ne sonnent jamais quand le téléphone est en veille.
+    Accordée d'office sur Android 12-13 ; à activer par l'utilisateur sur 14+.
+  -->
+  <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+</manifest>

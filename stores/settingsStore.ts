@@ -29,7 +29,14 @@ export interface PrayerReminders {
   minutesBefore: number;
   /** Adhan joué à l'heure de la prière (absent dans les anciens réglages : Sénégal) */
   adhan?: AdhanSound;
+  /**
+   * Prières où l'adhan retentit ; les autres prières notifiées gardent le son
+   * de rappel (absent dans les anciens réglages : adhan pour toutes)
+   */
+  adhanPrayers?: Record<PrayerKey, boolean>;
 }
+
+export const ALL_PRAYERS_ON: Record<PrayerKey, boolean> = { fajr: true, dhuhr: true, asr: true, maghrib: true, isha: true };
 
 /** Réglages du calcul des heures de prière */
 export type PrayerCalc = typeof DEFAULT_PRAYER_OPTIONS;
@@ -125,9 +132,10 @@ const defaults = {
   methodChosen: false,
   prayerReminders: {
     enabled: false,
-    prayers: { fajr: true, dhuhr: true, asr: true, maghrib: true, isha: true },
+    prayers: { ...ALL_PRAYERS_ON },
     minutesBefore: 0,
     adhan: 'senegal',
+    adhanPrayers: { ...ALL_PRAYERS_ON },
   } as PrayerReminders,
   readingReminder: { enabled: false, hour: 20, minute: 0 } as ReadingReminder,
   verseReminder: { enabled: false, hour: 7, minute: 30 } as VerseReminder,
@@ -210,6 +218,7 @@ export const useSettingsStore = create<SettingsState>()(
             ...current.prayerReminders,
             ...p.prayerReminders,
             adhan: (p.prayerReminders?.adhan as string) === 'touba' ? 'senegal' : (p.prayerReminders?.adhan ?? 'senegal'),
+            adhanPrayers: { ...ALL_PRAYERS_ON, ...p.prayerReminders?.adhanPrayers },
           },
           prayerCalc: {
             ...DEFAULT_PRAYER_OPTIONS,

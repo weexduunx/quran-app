@@ -65,7 +65,8 @@
             "./assets/notification-sounds/adhan_senegal.mp3",
             "./assets/notification-sounds/adhan_senegal_ios.caf",
             "./assets/notification-sounds/adhan_reunion.mp3",
-            "./assets/notification-sounds/adhan_reunion_ios.caf"
+            "./assets/notification-sounds/adhan_reunion_ios.caf",
+            "./assets/notification-sounds/rappel.wav"
           ]
         }
       ],

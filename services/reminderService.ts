@@ -17,6 +17,7 @@ import { surahTransliteration } from '@/utils/surahNames';
 import { quranApi } from '@/services/api';
 import { DAILY_DUAS } from '@/utils/adhkar';
 import { verseOfTheDay } from '@/utils/quranMeta';
+import { hasBundledSound } from '@/modules/adhan-sound';
 import type {
   AdhanSound,
   CustomAdhan,
@@ -30,15 +31,26 @@ import type {
 
 // Android fige le son d'un canal à sa création : changer le suffixe (-v2…)
 // force la création d'un canal neuf quand sa configuration sonore change.
-const CHANNEL_PRAYER = 'prieres-v2';
+// v3 : son de rappel intégré à l'APK. Le « son par défaut » d'Android dépend
+// du téléphone (souvent « aucun ») : les rappels restaient muets chez les testeurs.
+//
+// Un client construit avant l'ajout de rappel.wav ne l'a pas : on garde alors
+// les anciens canaux (son par défaut). Créer les canaux v3 sans le fichier
+// figerait pour toujours le son par défaut, même après mise à jour de l'APK.
+const reminderSoundBundled = Platform.OS !== 'android' || hasBundledSound('rappel');
+const CHANNEL_PRAYER = reminderSoundBundled ? 'prieres-v3' : 'prieres-v2';
+const CHANNEL_READING = reminderSoundBundled ? 'lecture-v2' : 'lecture';
+const CHANNEL_ADHKAR = reminderSoundBundled ? 'invocations-v2' : 'invocations';
+/** Son des notifications sans adhan (fichier déclaré dans app.json) */
+const REMINDER_SOUND = reminderSoundBundled ? 'rappel.wav' : 'default';
 /**
- * Anciens canaux de prière / d'adhan à supprimer (son figé, parfois muet, ou
- * adhan de Touba retiré). Jamais les canaux des adhans importés (adhan-perso-…).
+ * Anciens canaux à supprimer (son figé, parfois muet, ou adhan de Touba
+ * retiré). Jamais les canaux des adhans importés (adhan-perso-…).
  */
-const isLegacyPrayerChannel = (id: string) =>
-  id === 'prieres' || id === 'adhan-touba-v2' || id.startsWith('adhan_') || /^adhan-[a-z]+$/.test(id);
-const CHANNEL_READING = 'lecture';
-const CHANNEL_ADHKAR = 'invocations';
+const LEGACY_CHANNELS = new Set(
+  reminderSoundBundled ? ['prieres', 'prieres-v2', 'lecture', 'invocations', 'adhan-touba-v2'] : ['prieres', 'adhan-touba-v2']
+);
+const isLegacyChannel = (id: string) => LEGACY_CHANNELS.has(id) || id.startsWith('adhan_') || /^adhan-[a-z]+$/.test(id);
 
 /** iOS garde au plus 64 notifications en attente */
 const MAX_PENDING = 64;
@@ -92,6 +104,21 @@ export const PRAYER_LABELS: Record<PrayerKey, { fr: string; wo: string }> = {
   isha: { fr: 'Isha', wo: 'Gué' },
 };
 
+type SyncOptions = {
+  place: Place;
+  calc: PrayerCalcOptions;
+  prayer: PrayerReminders;
+  reading: ReadingReminder;
+  verse: VerseReminder;
+  adhkar: AdhkarReminders;
+  duas: Record<string, DuaReminder>;
+  lastRead?: { surahNumber: number; surahId: number; verseNumber: number } | null;
+  customAdhans: CustomAdhan[];
+};
+
+let running: Promise<void> | null = null;
+let queued: SyncOptions | null = null;
+
 let configured = false;
 export const reminderService = {
   configure() {
@@ -110,17 +137,26 @@ export const reminderService = {
         .then((channels) =>
           Promise.all(
             channels
-              .filter((ch) => isLegacyPrayerChannel(ch.id))
+              .filter((ch) => isLegacyChannel(ch.id))
               .map((ch) => Notifications.deleteNotificationChannelAsync(ch.id)),
           ),
         )
         .catch(() => {});
-      // Pas de clé `sound` : sur un canal, 'default' serait pris pour un
-      // fichier « default » introuvable ; sans la clé, Android met le son par défaut.
-      Notifications.setNotificationChannelAsync(CHANNEL_PRAYER, {
-        name: 'Heures de prière',
+      const reminderChannel = {
         importance: Notifications.AndroidImportance.HIGH,
+        // Sans le fichier : pas de clé `sound`, Android met son son par défaut
+        ...(reminderSoundBundled ? { sound: REMINDER_SOUND } : {}),
         vibrationPattern: [0, 250, 250, 250],
+        lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+        audioAttributes: {
+          usage: Notifications.AndroidAudioUsage.NOTIFICATION,
+          contentType: Notifications.AndroidAudioContentType.SONIFICATION,
+        },
+      };
+      Notifications.setNotificationChannelAsync(CHANNEL_PRAYER, {
+        ...reminderChannel,
+        name: 'Heures de prière (sans adhan)',
+        description: "Rappel avant la prière, et prières pour lesquelles l'adhan est désactivé",
       }).catch(() => {});
       for (const a of Object.values(ADHANS)) {
         Notifications.setNotificationChannelAsync(a.channel, {
@@ -137,13 +173,13 @@ export const reminderService = {
         }).catch(() => {});
       }
       Notifications.setNotificationChannelAsync(CHANNEL_READING, {
+        ...reminderChannel,
         name: 'Lecture et verset du jour',
-        importance: Notifications.AndroidImportance.DEFAULT,
       }).catch(() => {});
       Notifications.setNotificationChannelAsync(CHANNEL_ADHKAR, {
+        ...reminderChannel,
         name: 'Invocations',
         description: 'Invocations du matin, du soir, du coucher et du quotidien',
-        importance: Notifications.AndroidImportance.HIGH,
       }).catch(() => {});
     }
   },
@@ -157,29 +193,33 @@ export const reminderService = {
     return asked.granted;
   },
 
-  async sync(opts: {
-    place: Place;
-    calc: PrayerCalcOptions;
-    prayer: PrayerReminders;
-    reading: ReadingReminder;
-    verse: VerseReminder;
-    adhkar: AdhkarReminders;
-    duas: Record<string, DuaReminder>;
-    lastRead?: { surahNumber: number; surahId: number; verseNumber: number } | null;
-    customAdhans: CustomAdhan[];
-  }) {
+  /**
+   * Reprogramme tous les rappels. Une seule synchronisation à la fois : une
+   * demande arrivée pendant ce temps est rejouée ensuite avec ses réglages.
+   */
+  sync(opts: SyncOptions): Promise<void> {
+    queued = opts;
+    if (!running) {
+      running = (async () => {
+        while (queued) {
+          const next = queued;
+          queued = null;
+          try {
+            await this.syncNow(next);
+          } catch (e) {
+            console.warn('[rappels]', e);
+          }
+        }
+      })().finally(() => {
+        running = null;
+      });
+    }
+    return running;
+  },
+
+  async syncNow(opts: SyncOptions) {
     this.configure();
-
-    // On ne remplace que nos propres rappels
-    const scheduled = await Notifications.getAllScheduledNotificationsAsync();
-    await Promise.all(
-      scheduled
-        .filter((n) => OUR_KINDS.includes(String(n.content.data?.kind)))
-        .map((n) => Notifications.cancelScheduledNotificationAsync(n.identifier))
-    );
-
-    const permission = await Notifications.getPermissionsAsync();
-    if (!permission.granted) return;
+    const requests: Notifications.NotificationRequestInput[] = [];
 
     const location = opts.place;
     const where = placeLabel(location);
@@ -197,9 +237,14 @@ export const reminderService = {
     // Rappels datés, recalculés chaque jour : heures de prière, adhkâr matin/soir, verset du jour
     const adhan = resolveAdhan(opts.prayer.adhan ?? 'senegal', opts.customAdhans);
     const early = opts.prayer.minutesBefore > 0;
-    const prayersOn = opts.prayer.enabled ? Object.values(opts.prayer.prayers).filter(Boolean).length : 0;
+    const prayerKeys = Object.keys(PRAYER_LABELS) as PrayerKey[];
+    // Adhan seulement pour les prières choisies ; les autres sonnent avec le rappel
+    const adhanFor = (key: PrayerKey) => (adhan && opts.prayer.adhanPrayers?.[key] !== false ? adhan : null);
+    const prayerSlots = opts.prayer.enabled
+      ? prayerKeys.filter((k) => opts.prayer.prayers[k]).reduce((n, k) => n + (early && adhanFor(k) ? 2 : 1), 0)
+      : 0;
     const perDay =
-      prayersOn * (early && adhan ? 2 : 1) +
+      prayerSlots +
       (opts.adhkar.morning ? 1 : 0) +
       (opts.adhkar.evening ? 1 : 0) +
       (opts.verse.enabled ? 1 : 0);
@@ -212,35 +257,38 @@ export const reminderService = {
       const times = prayerTimesService.calculatePrayerTimes(day, location, opts.calc);
 
       if (opts.prayer.enabled) {
-        for (const key of Object.keys(PRAYER_LABELS) as PrayerKey[]) {
+        for (const key of prayerKeys) {
           if (!opts.prayer.prayers[key]) continue;
           const label = PRAYER_LABELS[key];
+          const prayerAdhan = adhanFor(key);
           const time = times[key].timeDate.getTime();
 
           // Rappel N minutes avant : son normal
           const before = time - opts.prayer.minutesBefore * 60_000;
           if (early && later(before)) {
-            await Notifications.scheduleNotificationAsync({
+            requests.push({
               content: {
                 title: `${label.wo} dans ${opts.prayer.minutesBefore} min · ${times[key].time}`,
                 body: `Prière de ${label.fr} à ${where}.`,
                 data: { kind: 'prayer', url: '/' },
-                sound: 'default',
+                sound: REMINDER_SOUND,
               },
               trigger: { type: DATE, date: before, channelId: CHANNEL_PRAYER },
             });
           }
 
-          // À l'heure : l'adhan choisi (ou le son normal si « aucun »)
-          if ((!early || adhan) && later(time)) {
-            await Notifications.scheduleNotificationAsync({
+          // À l'heure : l'adhan choisi pour cette prière (ou le son de rappel)
+          if ((!early || prayerAdhan) && later(time)) {
+            requests.push({
               content: {
                 title: `C'est l'heure de ${label.wo} · ${times[key].time}`,
                 body: `Prière de ${label.fr} à ${where}.`,
                 data: { kind: 'prayer', url: '/' },
-                sound: adhan ? (Platform.OS === 'ios' ? adhan.ios : adhan.android) ?? 'default' : 'default',
+                sound: prayerAdhan
+                  ? ((Platform.OS === 'ios' ? prayerAdhan.ios : prayerAdhan.android) ?? REMINDER_SOUND)
+                  : REMINDER_SOUND,
               },
-              trigger: { type: DATE, date: time, channelId: adhan ? adhan.channel : CHANNEL_PRAYER },
+              trigger: { type: DATE, date: time, channelId: prayerAdhan ? prayerAdhan.channel : CHANNEL_PRAYER },
             });
           }
         }
@@ -265,8 +313,8 @@ export const reminderService = {
       ];
       for (const a of adhkarAt) {
         if (!a.on || !later(a.at)) continue;
-        await Notifications.scheduleNotificationAsync({
-          content: { title: a.title, body: a.body, data: { kind: 'adhkar', url: `/adhkar?moment=${a.moment}` } },
+        requests.push({
+          content: { title: a.title, body: a.body, data: { kind: 'adhkar', url: `/adhkar?moment=${a.moment}` }, sound: REMINDER_SOUND },
           trigger: { type: DATE, date: a.at, channelId: CHANNEL_ADHKAR },
         });
       }
@@ -278,11 +326,12 @@ export const reminderService = {
         if (later(at.getTime())) {
           const v = verseOfTheDay(day);
           const text = await verseText(v.global);
-          await Notifications.scheduleNotificationAsync({
+          requests.push({
             content: {
               title: `Verset du jour · ${surahTransliteration(v.surah)} ${v.surah}:${v.verse}`,
               body: text ? short(`« ${text} »`) : 'Touchez pour le lire, l’écouter et le méditer.',
               data: { kind: 'verse', url: `/surah/${v.surah}?verse=${v.verse}` },
+              sound: REMINDER_SOUND,
             },
             trigger: { type: DATE, date: at, channelId: CHANNEL_READING },
           });
@@ -291,11 +340,12 @@ export const reminderService = {
     }
 
     if (opts.adhkar.sleep) {
-      await Notifications.scheduleNotificationAsync({
+      requests.push({
         content: {
           title: 'Invocations du coucher',
           body: 'Âyat al-Kursî, la fin d’Al-Baqara et « Bismika Allâhumma amûtu wa aḥyâ ».',
           data: { kind: 'adhkar', url: '/adhkar?moment=coucher' },
+          sound: REMINDER_SOUND,
         },
         trigger: {
           type: Notifications.SchedulableTriggerInputTypes.DAILY,
@@ -307,11 +357,12 @@ export const reminderService = {
     }
 
     if (opts.adhkar.friday) {
-      await Notifications.scheduleNotificationAsync({
+      requests.push({
         content: {
           title: 'Jumu‘a Mubârak',
           body: 'Lisez la sourate Al-Kahf et multipliez la prière sur le Prophète ﷺ.',
           data: { kind: 'adhkar', url: '/adhkar?moment=vendredi' },
+          sound: REMINDER_SOUND,
         },
         // 6 = vendredi (1 = dimanche)
         trigger: { type: Notifications.SchedulableTriggerInputTypes.WEEKLY, weekday: 6, hour: 9, minute: 0, channelId: CHANNEL_ADHKAR },
@@ -325,16 +376,17 @@ export const reminderService = {
         title: dua.title,
         body: short(dua.tr ? `${dua.tr} — ${dua.fr}` : dua.fr),
         data: { kind: 'dua', url: `/adhkar?moment=quotidien&dua=${id}` },
+        sound: REMINDER_SOUND,
       };
       if (r.days.length === 7) {
-        await Notifications.scheduleNotificationAsync({
+        requests.push({
           content,
           trigger: { type: Notifications.SchedulableTriggerInputTypes.DAILY, hour: r.hour, minute: r.minute, channelId: CHANNEL_ADHKAR },
         });
         continue;
       }
       for (const weekday of r.days) {
-        await Notifications.scheduleNotificationAsync({
+        requests.push({
           content,
           trigger: {
             type: Notifications.SchedulableTriggerInputTypes.WEEKLY,
@@ -349,7 +401,7 @@ export const reminderService = {
 
     if (opts.reading.enabled) {
       const last = opts.lastRead;
-      await Notifications.scheduleNotificationAsync({
+      requests.push({
         content: {
           title: 'Votre moment avec le Coran',
           body: last
@@ -359,6 +411,7 @@ export const reminderService = {
             kind: 'reading',
             url: last ? `/surah/${last.surahId}?verse=${last.verseNumber}` : '/surah/1',
           },
+          sound: REMINDER_SOUND,
         },
         trigger: {
           type: Notifications.SchedulableTriggerInputTypes.DAILY,
@@ -367,6 +420,29 @@ export const reminderService = {
           channelId: CHANNEL_READING,
         },
       });
+    }
+
+    // Tout est prêt (textes compris) : on remplace nos rappels d'un coup. Rien
+    // n'est annulé avant, pour ne pas rester sans rappels si l'app passe en
+    // arrière-plan pendant la préparation (minuteries et réseau y sont gelés).
+    const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+    await Promise.all(
+      scheduled
+        .filter((n) => OUR_KINDS.includes(String(n.content.data?.kind)))
+        .map((n) => Notifications.cancelScheduledNotificationAsync(n.identifier))
+    );
+
+    const permission = await Notifications.getPermissionsAsync();
+    if (!permission.granted) return;
+
+    // Les plus proches d'abord
+    const at = (r: Notifications.NotificationRequestInput) => {
+      const t = r.trigger as { date?: number | Date } | null;
+      return t?.date ? new Date(t.date).getTime() : Number.MAX_SAFE_INTEGER;
+    };
+    requests.sort((a, b) => at(a) - at(b));
+    for (const r of requests) {
+      await Notifications.scheduleNotificationAsync(r);
     }
   },
 };
