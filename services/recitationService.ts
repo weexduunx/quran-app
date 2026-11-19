@@ -11,6 +11,7 @@
  */
 import type { Reciter } from '@/stores/reciterStore';
 import { offlineReader } from '@/services/offlineService';
+import { VERSE_COUNTS, globalVerseNumber } from '@/utils/quranMeta';
 
 const QURAN_COM_API = 'https://api.quran.com/api/v4';
 const QURAN_COM_AUDIO = 'https://verses.quran.com/';
@@ -36,6 +37,21 @@ export interface VerseAudio {
 }
 
 const cache = new Map<string, Promise<VerseAudio>>();
+/** Mots déjà chargés, lisibles sans attendre (clé `récitateur|sourate:verset`) */
+const wordsReady = new Map<string, VerseWord[]>();
+
+/**
+ * Audio de toute une sourate (une seule requête Quran.com), gardé en mémoire
+ * pour pouvoir passer au verset suivant sans réseau ni attente.
+ *
+ * Indispensable en arrière-plan sur Android : React Native y gèle les
+ * minuteries, et `fetch` (polyfill whatwg-fetch) ne se résout qu'à travers un
+ * setTimeout. Un verset qui attendrait le réseau pour démarrer ne démarrerait
+ * qu'au retour dans l'app.
+ */
+type ChapterAudio = Record<number, { url: string; segments: WordSegment[] }>;
+const chapterReady = new Map<string, ChapterAudio>();
+const chapterLoading = new Map<string, Promise<void>>();
 
 function absoluteUrl(url: string): string {
   if (url.startsWith('http')) return url;
@@ -87,14 +103,7 @@ async function load(reciter: Reciter, surah: number, ayah: number, globalNumber:
       `${QURAN_COM_API}/verses/by_key/${key}?words=true&word_fields=text_uthmani${audioParam}`
     );
     const verse = data?.verse;
-    words = (verse?.words ?? [])
-      .filter((w: any) => w.char_type_name === 'word')
-      .map((w: any) => ({
-        position: w.position,
-        arabic: w.text_uthmani ?? w.text,
-        transliteration: w.transliteration?.text ?? undefined,
-        translation: w.translation?.text ?? undefined,
-      }));
+    words = parseWords(verse);
     if (reciter.quranComId && verse?.audio?.url) {
       url = absoluteUrl(verse.audio.url);
       segments = parseSegments(verse.audio.segments);
@@ -106,7 +115,90 @@ async function load(reciter: Reciter, surah: number, ayah: number, globalNumber:
   return { url: url ?? fallbackUrl(reciter, globalNumber), segments, words };
 }
 
+async function loadChapter(reciter: Reciter, surah: number) {
+  const data = await fetchJson(
+    `${QURAN_COM_API}/recitations/${reciter.quranComId}/by_chapter/${surah}?per_page=300&fields=segments`,
+    15000
+  );
+  const map: ChapterAudio = {};
+  for (const f of data?.audio_files ?? []) {
+    const ayah = Number(String(f.verse_key ?? '').split(':')[1]);
+    if (!ayah || !f.url) continue;
+    map[ayah] = { url: absoluteUrl(f.url), segments: parseSegments(f.segments) };
+  }
+  if (!Object.keys(map).length) throw new Error('Sourate sans audio');
+  chapterReady.set(`${reciter.id}|${surah}`, map);
+}
+
+const parseWords = (verse: any): VerseWord[] =>
+  (verse?.words ?? [])
+    .filter((w: any) => w.char_type_name === 'word')
+    .map((w: any) => ({
+      position: w.position,
+      arabic: w.text_uthmani ?? w.text,
+      transliteration: w.transliteration?.text ?? undefined,
+      translation: w.translation?.text ?? undefined,
+    }));
+
+/** Mot à mot de toute la sourate (50 versets par page), pour l'avoir même écran éteint */
+async function loadChapterWords(reciter: Reciter, surah: number) {
+  const pages = Math.ceil((VERSE_COUNTS[surah - 1] ?? 0) / 50);
+  await Promise.all(
+    Array.from({ length: pages }, async (_, i) => {
+      const data = await fetchJson(
+        `${QURAN_COM_API}/verses/by_chapter/${surah}?words=true&word_fields=text_uthmani&per_page=50&page=${i + 1}`,
+        15000
+      );
+      for (const v of data?.verses ?? []) {
+        const words = parseWords(v);
+        if (words.length) wordsReady.set(`${reciter.id}|${v.verse_key}`, words);
+      }
+    })
+  );
+}
+
 export const recitationService = {
+  /** Nombre de versets d'une sourate */
+  verseCount: (surah: number) => VERSE_COUNTS[surah - 1] ?? 0,
+
+  /**
+   * Charge à l'avance l'audio, les horodatages et le mot à mot de toute une
+   * sourate (à appeler au premier plan, quand le réseau répond normalement).
+   * Sans effet si c'est déjà fait.
+   */
+  prefetchChapter(reciter: Reciter, surah: number): Promise<void> {
+    if (surah < 1 || surah > 114) return Promise.resolve();
+    const key = `${reciter.id}|${surah}`;
+    if ((chapterReady.has(key) || !reciter.quranComId) && wordsReady.has(`${key}:1`)) return Promise.resolve();
+    let p = chapterLoading.get(key);
+    if (!p) {
+      p = Promise.all([
+        reciter.quranComId && !chapterReady.has(key) ? loadChapter(reciter, surah) : null,
+        wordsReady.has(`${key}:1`) ? null : loadChapterWords(reciter, surah),
+      ])
+        .then(() => {})
+        .catch((e) => console.warn('[recitation] sourate non préchargée', surah, e))
+        .finally(() => chapterLoading.delete(key));
+      chapterLoading.set(key, p);
+    }
+    return p;
+  },
+
+  /**
+   * Audio d'un verset disponible TOUT DE SUITE, sans réseau : fichier
+   * téléchargé, sourate préchargée, ou à défaut l'URL calculée du CDN
+   * islamic.network (même récitateur, sans mot à mot).
+   */
+  verseAudioNow(reciter: Reciter, surah: number, ayah: number): VerseAudio {
+    const local = offlineReader.verseAudio(reciter.id, surah, ayah);
+    if (local) return local;
+    const words = wordsReady.get(`${reciter.id}|${surah}:${ayah}`) ?? [];
+    const chapter = chapterReady.get(`${reciter.id}|${surah}`)?.[ayah];
+    if (chapter) return { url: chapter.url, segments: chapter.segments, words };
+    return { url: fallbackUrl(reciter, globalVerseNumber(surah, ayah)), segments: [], words };
+  },
+
+
   /** URL distante d'une sourate entière (récitateurs en mode « sourate ») */
   remoteSurahAudioUrl(reciter: Reciter, surah: number): string | undefined {
     return reciter.surahAudioBase ? `${reciter.surahAudioBase}${String(surah).padStart(3, '0')}.mp3` : undefined;
@@ -130,6 +222,7 @@ export const recitationService = {
     let p = cache.get(key);
     if (!p) {
       p = load(reciter, surah, ayah, globalNumber);
+      p.then((a) => a.words.length && wordsReady.set(key, a.words)).catch(() => {});
       // En cas d'échec on n'empoisonne pas le cache
       p.catch(() => cache.delete(key));
       cache.set(key, p);

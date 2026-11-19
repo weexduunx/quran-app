@@ -13,7 +13,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
 import { VerseCard } from '@/components/VerseCard';
-import { AudioPlayerSimple as AudioPlayer } from '@/components/AudioPlayerSimple';
+import { AudioPlayerSimple as AudioPlayer, type PlayRequest } from '@/components/AudioPlayerSimple';
 import { useQuranStore, Surah, Verse } from '@/stores/quranStore';
 import { useProgressStore, bookmarkKey } from '@/stores/progressStore';
 import { useTafsirStore } from '@/stores/tafsirStore';
@@ -60,13 +60,19 @@ export default function SurahScreen() {
   const [error, setError] = useState<string | null>(null);
   const [showPlayer, setShowPlayer] = useState(false);
   const [showDisplay, setShowDisplay] = useState(false);
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [activeVerseId, setActiveVerseId] = useState<number | null>(null);
+  const [request, setRequest] = useState<PlayRequest | null>(null);
+  /** Verset récité (il peut appartenir à une autre sourate que celle affichée) */
+  const [playingPos, setPlayingPos] = useState<{ surah: number; ayah: number } | null>(null);
+  const [playerHeight, setPlayerHeight] = useState(0);
 
   const listRef = useRef<FlatList<Verse>>(null);
   const surahRef = useRef<SurahWithVerses | null>(null);
 
   const verses = useMemo(() => surah?.verses ?? [], [surah]);
+  const activeVerseId = useMemo(() => {
+    if (!showPlayer || !playingPos || playingPos.surah !== (surah?.number ?? surahId)) return null;
+    return verses.find((v) => v.verse_number === playingPos.ayah)?.id ?? null;
+  }, [showPlayer, playingPos, surah, surahId, verses]);
   const bookmarked = useMemo(() => new Set(bookmarks.map((b) => b.key)), [bookmarks]);
 
   const load = useCallback(async () => {
@@ -122,23 +128,29 @@ export default function SurahScreen() {
 
   const playFrom = useCallback(
     (verse: Verse) => {
-      const index = verses.findIndex((v) => v.id === verse.id);
-      if (index === -1) return;
-      setCurrentIndex(index);
-      setActiveVerseId(verse.id);
+      const n = surahRef.current?.number ?? surahId;
+      setRequest({ surah: n, ayah: verse.verse_number, nonce: Date.now() });
+      setPlayingPos({ surah: n, ayah: verse.verse_number });
       setShowPlayer(true);
     },
-    [verses]
+    [surahId]
   );
 
-  const handleVerseChange = (index: number) => {
-    setCurrentIndex(index);
-    const v = verses[index];
-    if (v) {
-      setActiveVerseId(v.id);
-      listRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0.2 });
-    }
-  };
+  // Le lecteur avance : on suit le verset, et on ouvre la sourate suivante quand il y passe
+  const handlePositionChange = useCallback(
+    (s: number, ayah: number) => {
+      setPlayingPos({ surah: s, ayah });
+      if (s !== surahId) router.setParams({ id: String(s), verse: '1' });
+    },
+    [surahId]
+  );
+
+  // Garde le verset récité à l'écran (y compris une fois la sourate suivante chargée)
+  useEffect(() => {
+    if (!showPlayer || !playingPos || !surah || playingPos.surah !== surah.number) return;
+    const index = surah.verses.findIndex((v) => v.verse_number === playingPos.ayah);
+    if (index >= 0) listRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0.2 });
+  }, [showPlayer, playingPos, surah]);
 
   const handleBookmark = useCallback(
     (v: Verse) => {
@@ -313,7 +325,7 @@ export default function SurahScreen() {
           windowSize={11}
           onViewableItemsChanged={onViewableItemsChanged}
           viewabilityConfig={viewabilityConfig}
-          contentContainerStyle={{ paddingBottom: showPlayer ? 420 : insets.bottom + Spacing.xxxl }}
+          contentContainerStyle={{ paddingBottom: showPlayer ? playerHeight + Spacing.lg : insets.bottom + Spacing.xxxl }}
           onScrollToIndexFailed={(info) => {
             listRef.current?.scrollToOffset({ offset: info.averageItemLength * info.index, animated: false });
             setTimeout(() => listRef.current?.scrollToIndex({ index: info.index, animated: false }), 300);
@@ -325,14 +337,13 @@ export default function SurahScreen() {
         <AudioPlayer
           verses={verses}
           surahNumber={surah?.number ?? surahId}
-          surahName={surah?.name_transliteration}
-          currentVerseIndex={currentIndex}
-          onVerseChange={handleVerseChange}
-          onVerseHighlight={setActiveVerseId}
+          request={request}
+          onPositionChange={handlePositionChange}
           isVisible={showPlayer}
+          onHeightChange={setPlayerHeight}
           onClose={() => {
             setShowPlayer(false);
-            setActiveVerseId(null);
+            setPlayingPos(null);
           }}
         />
       )}

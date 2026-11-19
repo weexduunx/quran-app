@@ -3,21 +3,26 @@
  * fichier par sourate (ex. Mouhamed Hady Touré). Pas de mot à mot ni de suivi
  * verset par verset : quand on lance depuis un verset, on se place à une
  * position estimée (proportionnelle à la longueur du texte qui précède).
+ *
+ * À la fin d'une sourate, la suivante démarre (lecture continue), y compris
+ * en arrière-plan : l'URL est connue sans réseau et l'enchaînement se fait
+ * dans l'écouteur natif de fin de lecture.
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Animated, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { setAudioModeAsync, useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
-import { useBackgroundAudio } from '@/hooks/useBackgroundAudio';
 import Slider from '@react-native-community/slider';
 import { Ionicons } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { useBackgroundAudio } from '@/hooks/useBackgroundAudio';
 import type { AudioPlayerProps } from '@/components/AudioPlayerSimple';
 import { useReciterStore } from '@/stores/reciterStore';
 import { recitationService } from '@/services/recitationService';
+import { surahTransliteration } from '@/utils/surahNames';
 import { useAppTheme } from '@/hooks/useAppTheme';
 import { Radius, Spacing, Type } from '@/constants/theme';
 import { Tap } from '@/components/ui/kit';
+import { MinimizeButton, PLAYER_COLORS, PlayerShell } from '@/components/PlayerShell';
 
 const SPEEDS = [0.75, 1, 1.25, 1.5];
 
@@ -30,43 +35,48 @@ const fmt = (sec: number) => {
 };
 
 /** Longueur « récitée » approximative : lettres arabes sans voyelles ni signes */
-const letters = (t?: string) => (t ?? '').replace(/[ً-ٰٟۖ-ۭ\s]/g, '').length;
+const letters = (t?: string) => (t ?? '').replace(/[ً-ٰٟۖ-ۭ\s]/g, '').length;
 
 export function SurahAudioPlayer({
   verses,
   surahNumber,
-  surahName,
-  currentVerseIndex,
-  onVerseHighlight,
+  request,
+  onPositionChange,
   isVisible,
   onClose,
+  onHeightChange,
 }: AudioPlayerProps) {
   const { isDark } = useAppTheme();
-  const insets = useSafeAreaInsets();
   const reciter = useReciterStore((s) => s.getSelectedReciter());
   const player = useAudioPlayer(null, { updateInterval: 250 });
   const status = useAudioPlayerStatus(player);
+  const c = PLAYER_COLORS;
+  const bg = isDark ? '#0E3A2C' : '#0B3D2E';
 
+  const [surah, setSurah] = useState<number | null>(null);
   const [speedIndex, setSpeedIndex] = useState(1);
   const [loop, setLoop] = useState(false);
+  const [continuous, setContinuous] = useState(true);
+  const [minimized, setMinimized] = useState(false);
   const [seeking, setSeeking] = useState<number | null>(null);
-  const [estimated, setEstimated] = useState(false);
-  const pendingVerse = useRef<number | null>(null);
+  const [estimated, setEstimated] = useState<number | null>(null);
+  const pendingSeek = useRef<number | null>(null);
+  const surahRef = useRef<number | null>(null);
   const loadedUrl = useRef<string | null>(null);
-  const slide = useRef(new Animated.Value(500)).current;
 
-  const surah = surahNumber ?? verses[0]?.surah_id;
-  const url = surah ? recitationService.surahAudioUrl(reciter, surah) : undefined;
-  const bg = isDark ? '#0E3A2C' : '#0B3D2E';
+  const live = useRef({ loop, continuous, isVisible, reciter, speedIndex, onPositionChange });
+  live.current = { loop, continuous, isVisible, reciter, speedIndex, onPositionChange };
+
+  const name = surah ? surahTransliteration(surah) : '';
 
   useBackgroundAudio(player, {
     active: isVisible,
     playing: status.playing,
-    title: surahName ?? (surah ? `Sourate ${surah}` : undefined),
+    title: surah ? name : undefined,
     artist: reciter?.name,
   });
 
-  // Part du texte qui précède chaque verset (0 → 1)
+  // Part du texte qui précède chaque verset (0 → 1) — sourate affichée à l'écran
   const offsets = useMemo(() => {
     const lens = verses.map((v) => letters(v.text_arabic));
     const total = lens.reduce((a, b) => a + b, 0) || 1;
@@ -85,49 +95,80 @@ export function SurahAudioPlayer({
   }, []);
 
   useEffect(() => {
-    Animated.spring(slide, { toValue: isVisible ? 0 : 500, useNativeDriver: true, tension: 80, friction: 12 }).start();
     if (!isVisible) player.pause();
-  }, [isVisible, slide, player]);
+  }, [isVisible, player]);
 
-  // Ouverture ou changement de verset demandé
-  useEffect(() => {
-    if (!isVisible || !url) return;
-    const v = verses[currentVerseIndex];
-    if (v) onVerseHighlight(v.id);
-    pendingVerse.current = currentVerseIndex;
+  /** Charge (si besoin) et lance une sourate, sans réseau préalable */
+  const playSurah = (n: number) => {
+    const { reciter: r, speedIndex: si, onPositionChange: notify } = live.current;
+    const url = recitationService.surahAudioUrl(r, n);
+    if (!url) return;
+    surahRef.current = n;
+    setSurah(n);
     if (loadedUrl.current !== url) {
       loadedUrl.current = url;
       player.replace({ uri: url });
     }
-    player.setPlaybackRate(SPEEDS[speedIndex]);
+    player.setPlaybackRate(SPEEDS[si]);
     player.play();
+    notify(n, 1);
+  };
+
+  // Fin de sourate : répétition, sourate suivante ou arrêt (écouteur natif, marche en arrière-plan)
+  const onFinish = () => {
+    const n = surahRef.current;
+    const { loop: lp, continuous: cont, isVisible: visible } = live.current;
+    if (!n || !visible) return;
+    if (lp) {
+      player.seekTo(0);
+      player.play();
+    } else if (cont && n < 114) {
+      setEstimated(null);
+      playSurah(n + 1);
+    }
+  };
+  const onFinishRef = useRef(onFinish);
+  onFinishRef.current = onFinish;
+  useEffect(() => {
+    const sub = player.addListener('playbackStatusUpdate', (s) => {
+      if (s.didJustFinish) onFinishRef.current();
+    });
+    return () => sub.remove();
+  }, [player]);
+
+  // Demande de l'écran : sourate et verset de départ
+  useEffect(() => {
+    if (!isVisible || !request) return;
+    playSurah(request.surah);
+    // Position estimée du verset, seulement pour la sourate affichée
+    const index = request.surah === surahNumber ? request.ayah - 1 : 0;
+    pendingSeek.current = index;
+    if (index > 0 && status.duration && loadedUrl.current === recitationService.surahAudioUrl(reciter, request.surah)) {
+      // Fichier déjà chargé : on se place tout de suite
+      pendingSeek.current = null;
+      player.seekTo(offsets[index] * status.duration);
+      setEstimated(request.ayah);
+    }
+    onPositionChange(request.surah, request.ayah);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isVisible, url, currentVerseIndex]);
+  }, [isVisible, request?.nonce, reciter.id]);
 
   // Dès que la durée est connue, se placer au verset demandé
   useEffect(() => {
-    const index = pendingVerse.current;
+    const index = pendingSeek.current;
     if (index === null || !status.duration) return;
-    pendingVerse.current = null;
-    if (index <= 0) {
-      setEstimated(false);
+    pendingSeek.current = null;
+    if (index <= 0 || !offsets[index]) {
+      setEstimated(null);
       return;
     }
     player.seekTo(offsets[index] * status.duration);
-    setEstimated(true);
-  }, [status.duration, offsets, player, currentVerseIndex]);
+    setEstimated(index + 1);
+  }, [status.duration, offsets, player]);
 
   useEffect(() => {
     player.setPlaybackRate(SPEEDS[speedIndex]);
   }, [speedIndex, player]);
-
-  useEffect(() => {
-    if (!status.didJustFinish) return;
-    if (loop) {
-      player.seekTo(0);
-      player.play();
-    }
-  }, [status.didJustFinish]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const skip = (d: number) => player.seekTo(Math.max(0, Math.min(status.duration || 0, status.currentTime + d)));
   const toggle = () => {
@@ -139,30 +180,43 @@ export function SurahAudioPlayer({
   };
   const close = () => {
     player.pause();
+    setMinimized(false);
     onClose();
   };
 
   const busy = (!status.isLoaded || status.isBuffering) && !status.playing;
-  const gold = '#E9D49A';
+  const progress = status.duration ? status.currentTime / status.duration : 0;
 
   return (
-    <Animated.View
-      pointerEvents={isVisible ? 'auto' : 'none'}
-      style={[styles.sheet, { backgroundColor: bg, paddingBottom: insets.bottom + Spacing.md, transform: [{ translateY: slide }] }]}
+    <PlayerShell
+      isVisible={isVisible}
+      minimized={minimized}
+      onMinimizedChange={setMinimized}
+      bg={bg}
+      onHeightChange={onHeightChange}
+      mini={{
+        title: surah ? `${name} · sourate ${surah}` : 'Préparation…',
+        subtitle: reciter.name,
+        playing: status.playing,
+        busy,
+        progress,
+        onTogglePlay: toggle,
+        onClose: close,
+      }}
     >
-      <View style={styles.handle} />
       <View style={styles.header}>
         <View style={styles.avatar}>
-          <Ionicons name="mic-outline" size={20} color={gold} />
+          <Ionicons name="mic-outline" size={20} color={c.gold} />
         </View>
         <View style={{ flex: 1 }}>
           <Text style={[Type.callout, { color: '#fff', fontWeight: '600' }]} numberOfLines={1}>
             {reciter.name}
           </Text>
-          <Text style={[Type.caption, { color: 'rgba(255,255,255,0.72)' }]} numberOfLines={1}>
-            {surahName ? `${surahName} · ` : ''}sourate entière
+          <Text style={[Type.caption, { color: c.muted }]} numberOfLines={1}>
+            {surah ? `${name} · ` : ''}sourate entière
           </Text>
         </View>
+        <MinimizeButton onPress={() => setMinimized(true)} />
         <Tap onPress={close} hitSlop={10} accessibilityLabel="Fermer le lecteur" style={styles.iconBtn}>
           <Ionicons name="close" size={22} color="#fff" />
         </Tap>
@@ -170,7 +224,7 @@ export function SurahAudioPlayer({
 
       <Text style={styles.note}>
         {estimated
-          ? `Départ à une position estimée du verset ${currentVerseIndex + 1} : ajustez avec ±10 s si besoin.`
+          ? `Départ à une position estimée du verset ${estimated} : ajustez avec ±10 s si besoin.`
           : 'Récitation par sourate entière : pas de mot à mot pour cette voix.'}
       </Text>
 
@@ -186,9 +240,9 @@ export function SurahAudioPlayer({
             player.seekTo(v);
             setSeeking(null);
           }}
-          minimumTrackTintColor={gold}
-          maximumTrackTintColor="rgba(255,255,255,0.22)"
-          thumbTintColor={gold}
+          minimumTrackTintColor={c.gold}
+          maximumTrackTintColor={c.line}
+          thumbTintColor={c.gold}
           disabled={!status.isLoaded}
         />
         <Text style={styles.time}>{fmt(status.duration)}</Text>
@@ -202,11 +256,11 @@ export function SurahAudioPlayer({
           <Ionicons name="play-back" size={22} color="#fff" />
           <Text style={styles.skipText}>10 s</Text>
         </Tap>
-        <Tap haptic onPress={toggle} style={[styles.play, { backgroundColor: gold }]} accessibilityLabel={status.playing ? 'Pause' : 'Lecture'}>
+        <Tap haptic onPress={toggle} style={[styles.play, { backgroundColor: c.gold }]} accessibilityLabel={status.playing ? 'Pause' : 'Lecture'}>
           {busy ? (
-            <ActivityIndicator color="#0B3D2E" />
+            <ActivityIndicator color={c.onGold} />
           ) : (
-            <Ionicons name={status.playing ? 'pause' : 'play'} size={28} color="#0B3D2E" style={!status.playing && { marginLeft: 3 }} />
+            <Ionicons name={status.playing ? 'pause' : 'play'} size={28} color={c.onGold} style={!status.playing && { marginLeft: 3 }} />
           )}
         </Tap>
         <Tap haptic onPress={() => skip(10)} style={styles.iconBtn} accessibilityLabel="Avancer de 10 secondes">
@@ -217,32 +271,29 @@ export function SurahAudioPlayer({
           haptic
           onPress={() => setLoop((l) => !l)}
           accessibilityLabel={loop ? 'Ne plus répéter la sourate' : 'Répéter la sourate'}
-          style={[styles.pill, loop && { borderColor: gold, backgroundColor: 'rgba(255,255,255,0.10)' }]}
+          style={[styles.pill, loop && { borderColor: c.gold, backgroundColor: c.soft }]}
         >
-          <Ionicons name="repeat" size={16} color={loop ? gold : '#fff'} />
+          <Ionicons name="repeat" size={16} color={loop ? c.gold : '#fff'} />
         </Tap>
       </View>
-    </Animated.View>
+
+      {!loop && (
+        <Tap
+          onPress={() => setContinuous((v) => !v)}
+          accessibilityRole="switch"
+          accessibilityState={{ checked: continuous }}
+          style={styles.continuousRow}
+        >
+          <Ionicons name={continuous ? 'checkmark-circle' : 'ellipse-outline'} size={18} color={continuous ? c.gold : c.muted} />
+          <Text style={[Type.caption, { color: c.muted, marginLeft: 6 }]}>Enchaîner les sourates</Text>
+        </Tap>
+      )}
+    </PlayerShell>
   );
 }
 
 const styles = StyleSheet.create({
-  sheet: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    borderTopLeftRadius: Radius.xl,
-    borderTopRightRadius: Radius.xl,
-    paddingHorizontal: Spacing.xl,
-    elevation: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.18,
-    shadowRadius: 16,
-  },
-  handle: { alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.22)', marginVertical: Spacing.md },
-  header: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
+  header: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
   avatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.10)', alignItems: 'center', justifyContent: 'center' },
   iconBtn: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center' },
   skipText: { color: 'rgba(255,255,255,0.72)', fontSize: 10 },
@@ -261,4 +312,5 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   play: { width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center' },
+  continuousRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', minHeight: 36, marginTop: Spacing.sm },
 });
