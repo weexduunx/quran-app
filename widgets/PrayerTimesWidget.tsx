@@ -1,3 +1,8 @@
+'use no memo';
+// Le React Compiler (activé dans app.json) transformerait ces composants en
+// composants à hooks ; or la bibliothèque les appelle comme de simples
+// fonctions, hors rendu React → « Invalid hook call », et le widget restait
+// transparent. Ce fichier en est donc exclu.
 /**
  * Widget Android « Heures de prière » (react-native-android-widget).
  * Ce n'est pas une vue React Native : seuls les composants *Widget sont permis.
