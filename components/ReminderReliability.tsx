@@ -8,13 +8,58 @@
  * Rien ne s'affiche quand tout est bon, ou sur iOS.
  */
 import React, { useCallback, useEffect, useState } from 'react';
-import { AppState, Platform, StyleSheet, Text, View } from 'react-native';
+import { AppState, Linking, Platform, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as Notifications from 'expo-notifications';
 
 import { openBatterySettings, openExactAlarmSettings, reminderReliability } from '@/modules/adhan-sound';
 import { useAppTheme } from '@/hooks/useAppTheme';
 import { Radius, Spacing, Type } from '@/constants/theme';
 import { Tap } from '@/components/ui/kit';
+import { onPermissionChecked } from '@/services/reminderService';
+
+/**
+ * Rappels activés mais notifications non autorisées : sans ce bandeau, rien
+ * ne sonne et rien ne l'explique (Android 13+ ne les accorde pas d'office).
+ */
+export function NotificationsBlocked({ active }: { active: boolean }) {
+  const { colors } = useAppTheme();
+  const [perm, setPerm] = useState<Notifications.NotificationPermissionsStatus | null>(null);
+
+  const refresh = useCallback(() => {
+    Notifications.getPermissionsAsync().then(setPerm).catch(() => {});
+  }, []);
+  useEffect(() => {
+    refresh();
+    const sub = AppState.addEventListener('change', (s) => s === 'active' && refresh());
+    const off = onPermissionChecked(refresh);
+    return () => {
+      sub.remove();
+      off();
+    };
+  }, [refresh]);
+
+  if (!active || !perm || perm.granted) return null;
+  const allow = async () => {
+    if (perm.canAskAgain) {
+      const asked = await Notifications.requestPermissionsAsync();
+      setPerm(asked);
+      if (asked.granted) return;
+    }
+    Linking.openSettings().catch(() => {});
+  };
+  return (
+    <View style={[styles.box, { backgroundColor: colors.goldSoft, borderColor: colors.gold, marginBottom: Spacing.sm }]}>
+      <Ionicons name="notifications-off-outline" size={18} color={colors.gold} />
+      <Text style={[Type.caption, { color: colors.text, flex: 1 }]}>
+        Les notifications de Bayân sont bloquées : aucun adhan ni rappel ne peut sonner.
+      </Text>
+      <Tap haptic onPress={allow} accessibilityRole="button" style={[styles.btn, { backgroundColor: colors.primary }]}>
+        <Text style={[Type.caption, { color: colors.onPrimary, fontWeight: '700' }]}>Autoriser</Text>
+      </Tap>
+    </View>
+  );
+}
 
 export function ReminderReliability() {
   const { colors } = useAppTheme();

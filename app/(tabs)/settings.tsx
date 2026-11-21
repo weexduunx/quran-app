@@ -20,7 +20,7 @@ import { ArabicFonts, Radius, Spacing, Type } from '@/constants/theme';
 import { Chip, IconButton, Segmented, SectionTitle, Tap } from '@/components/ui/kit';
 import { CityPicker } from '@/components/CityPicker';
 import { AdhanPicker } from '@/components/AdhanPicker';
-import { ReminderReliability } from '@/components/ReminderReliability';
+import { NotificationsBlocked, ReminderReliability } from '@/components/ReminderReliability';
 import { APP_NAME, APP_TAGLINE } from '@/components/BrandMark';
 import { PoweredBy } from '@/components/PoweredBy';
 import { placeLabel } from '@/utils/cities';
@@ -241,6 +241,18 @@ export default function SettingsScreen() {
         </Group>
 
         <SectionTitle style={styles.sectionGap}>Rappels</SectionTitle>
+        <NotificationsBlocked
+          active={
+            s.prayerReminders.enabled ||
+            s.readingReminder.enabled ||
+            s.verseReminder.enabled ||
+            s.adhkarReminders.morning ||
+            s.adhkarReminders.evening ||
+            s.adhkarReminders.sleep ||
+            s.adhkarReminders.friday ||
+            Object.keys(s.duaReminders).length > 0
+          }
+        />
         <Group>
           <Toggle
             icon="notifications-outline"

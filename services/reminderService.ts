@@ -116,6 +116,16 @@ type SyncOptions = {
   customAdhans: CustomAdhan[];
 };
 
+/** Prévenus après chaque vérification de l'autorisation (bandeau des réglages) */
+const permissionListeners = new Set<() => void>();
+const notifyPermissionListeners = () => permissionListeners.forEach((l) => l());
+export const onPermissionChecked = (l: () => void) => {
+  permissionListeners.add(l);
+  return () => {
+    permissionListeners.delete(l);
+  };
+};
+
 let running: Promise<void> | null = null;
 let queued: SyncOptions | null = null;
 
@@ -432,7 +442,14 @@ export const reminderService = {
         .map((n) => Notifications.cancelScheduledNotificationAsync(n.identifier))
     );
 
-    const permission = await Notifications.getPermissionsAsync();
+    // Rappels activés mais notifications non autorisées (réinstallation,
+    // sauvegarde restaurée, Android 13+ qui ne les accorde jamais d'office) :
+    // on redemande, sinon rien ne serait programmé, sans le moindre signe.
+    let permission = await Notifications.getPermissionsAsync();
+    if (!permission.granted && requests.length && permission.canAskAgain) {
+      permission = await Notifications.requestPermissionsAsync();
+    }
+    notifyPermissionListeners();
     if (!permission.granted) return;
 
     // Les plus proches d'abord
